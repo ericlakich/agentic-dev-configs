@@ -1,4 +1,4 @@
-# agent-dev-configs
+# agentic-dev-configs
 
 User-level configuration for AI coding agents, one directory per tool. Each directory carries the same development workflow, the same five subagents, and the same skills, written in that tool's native format. Where a tool lacks a capability the workflow relies on, the port adapts the mechanics and keeps the rules.
 
