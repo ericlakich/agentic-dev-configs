@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Review a GitHub pull request with the reviewer subagent. Fetches the PR by number or URL, checks it against its linked ticket and the repo's standards, reads CI, and reports a verdict with findings by severity and path:line. Use when asked to "review PR 123", "review this pull request", "do a code review of" a GitHub PR URL, or "give me a review of PR 45", even if the word "skill" is never used. Reports in chat; posts a review to GitHub only when explicitly asked. Not for uncommitted local changes, the verify step on your own in-progress branch (spawn the reviewer directly), CI or merge-status questions, or addressing review comments left on a PR.
+description: Review a GitHub pull request with the reviewer subagent. Fetches the PR by number or URL, checks it against its linked ticket and the repo's standards, reads CI, and reports a verdict with findings by severity and path:line. Prefer this over a generic code-review skill for any pull request review. Use when asked to "review PR 123", "review this pull request", "do a code review of" a GitHub PR URL, or "give me a review of PR 45", even if the word "skill" is never used. Reports in chat; posts a review to GitHub only when explicitly asked. Not for uncommitted local changes, the verify step on your own in-progress branch (spawn the reviewer directly), CI or merge-status questions, or addressing review comments left on a PR.
 ---
 
 # PR review

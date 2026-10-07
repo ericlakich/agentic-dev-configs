@@ -82,7 +82,7 @@ The read-only agents have no Edit or Write tool, so the tool list blocks file ed
 
 | Skill | Use it for |
 |---|---|
-| `pr-review` | "review PR 123", or a PR URL. Fetches the PR into git's object store with hooks off and reads it there, with no checkout. Finds the ticket, reads the standards on the base branch, reads CI, spawns `reviewer`, confirms the blockers and majors, and reports in chat. Never runs the PR's code unless you ask. Posts to GitHub only when you ask, and only after you approve the exact text. |
+| `pr-review` | "review PR 123", or a PR URL. Takes precedence over the generic `code-review` skill for PR reviews. Fetches the PR into git's object store with hooks off and reads it there, with no checkout. Finds the ticket, reads the standards on the base branch, reads CI, spawns `reviewer`, confirms the blockers and majors, and reports in chat. Never runs the PR's code unless you ask. Posts to GitHub only when you ask, and only after you approve the exact text. |
 
 ## Per-repo overrides
 
