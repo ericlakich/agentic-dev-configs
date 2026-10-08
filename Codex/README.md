@@ -47,7 +47,7 @@ Codex has no main-session role: a role applies only to a spawned or resumed sess
 codex
 ```
 
-`~/.codex/AGENTS.md` also reaches subagents, so every worker loads Part C. B0 tells workers to ignore it, and Part C opens by saying it applies only to the main session. Both are instructions only.
+`~/.codex/AGENTS.md` also reaches subagents (inferred; see Known gaps), so every worker loads Part C. B0 tells workers to ignore it, and Part C opens by saying it applies only to the main session. Both are instructions only.
 
 Not shipped: `codex --profile orchestrator`, with a profile that sets root `developer_instructions` to the Part C text. Root `developer_instructions` adds a developer message, and children inherit it unless their role sets its own ([`child_config.rs`][child-config]). All five roles here set their own, so workers would not get it. This port keeps Part C in `AGENTS.md` instead, so every main session follows it without a flag. Untested.
 
@@ -69,9 +69,10 @@ intake -> orient -> plan -> build -> verify -> ship -> report
 
 orient -> orient   unknowns get one re-brief, then go into the question batch
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
-verify -> build    in-scope findings become fix briefs; at most 3 fix rounds
+verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
 verify -> plan     a design-level finding: re-plan
-any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change
+any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change,
+                   a pre-existing or flaky gate failure
 ```
 
 Each phase hands bounded units to workers, and each worker runs its own inner loop:
@@ -79,10 +80,12 @@ Each phase hands bounded units to workers, and each worker runs its own inner lo
 ```
 intake      orchestrator      not code: answer; PR review: pr-review skill; code change: orient
 orient      explorer x N      search, read, check; at most 3 widening rounds per question
-plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions
+            orchestrator      tracker and candidate tickets, workflow skill, standards, real gates
+plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions;
+                              then the ticket (match or new) and its branch
 build       implementer x N   red, green, check; at most 3 attempts per failing check
             orchestrator      read each unit's diff and commit it
-verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, or regressed
+verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
 ship        orchestrator      push, PR, move the ticket, link both ways, stop
 report      orchestrator      fixed B7 format
@@ -91,7 +94,7 @@ side issue  side-fix          own ticket, branch, and worktree; scaled-down loop
             orchestrator      runs side-fix's verify loop (3 fix rounds), then pushes and opens its PR
 ```
 
-Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of units, verify rounds, open findings, and side tickets. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, and side tickets. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
 
 ## Differences from Claude
 
@@ -119,17 +122,17 @@ Source links point at openai/codex commit `11da6b9` (2026-10-07).
 
 - No tool restriction per role. `explorer`, `reviewer`, and `verifier` are read-only by instruction only. Turning off `shell_tool` under `[features]` would also block `rg` and `git`, so these roles leave it on. ([source][src])
 - Role files ignore `sandbox_mode`, `approval_policy`, and `mcp_servers`, even though the docs list them. Children inherit the parent's sandbox, approval policy, working directory, and permissions. These files set none of those keys. ([source][src])
-- In the default workspace-write sandbox, `.git` is read-only ([`permissions.rs`][permissions]). B3's fetch, `worktree add`, and the exclude append need approval, and so does every side-fix commit. With `approval_policy = "never"`, side-fix cannot commit.
+- In the default workspace-write sandbox, `.git` is read-only ([`permissions.rs`][permissions]). B3's fetch, `worktree add`, and the exclude append need approval, and so do Phase 4's base-check worktree and every side-fix commit. With `approval_policy = "never"`, side-fix cannot commit.
 - No per-agent worktree. Worktrees exist only per session: the Codex app keeps managed worktrees under `$CODEX_HOME/worktrees`, and the CLI `--worktree` flag starts a session in a new one. B3 has the orchestrator create the side-fix worktree instead. ([docs][docs])
 - Gates that don't read git excludes (some lint and test globs) can pick up files under `.worktrees/` while a side-fix worktree exists.
 - Multi-agent V2 is what current models use. The bundled model catalog marks gpt-6.1-sol, gpt-6-sol, gpt-6-astra, gpt-6-luna, gpt-5.6-sol, and gpt-5.6-terra as `multi_agent_version: v2`, even when `features.multi_agent_v2` is off. Under V2, `spawn_agent` defaults `fork_turns` to `all`, so a child inherits the parent's whole history; B9 has the orchestrator pass `fork_turns: "none"`. V2 ignores `max_depth` and gives children the spawn tools, so "only the orchestrator spawns" is enforced by instructions only. ([`config/mod.rs`][config-mod], [`models.json`][models], [`spawn.rs`][spawn])
 - Under V1 the default depth is 1, so side-fix cannot spawn `reviewer` or `verifier`. You can set `[agents] max_depth = 2` in `~/.codex/config.toml` to let it. This port does not rely on nesting under either version: side-fix returns ready for verify, and the orchestrator runs its verify loop, then ships. ([source][src])
-- Concurrency is capped: V1 `agents.max_concurrent_threads_per_session` defaults to 6. V2 caps it at 4 threads, counting the root agent. ([source][src])
+- Concurrency is capped: V1 `agents.max_concurrent_threads_per_session` defaults to 6. V2 caps it at 4 threads, counting the root agent, so Part C runs at most 3 workers at once and queues the rest. ([source][src])
 - Codex ships a Claude Code importer ([`codex-rs/external-agent-migration/`][importer]). For subagents it keeps only `name`, `description`, and the body, drops `tools`, `model`, `isolation`, and `background`, and rewrites "Claude"/"CLAUDE.md" to "Codex"/"AGENTS.md". An import of `../Claude/` would keep side-fix's own-worktree and spawning steps, which this port replaces. By the same rules it would likely bring `orchestrator` in as a spawnable role, which this port replaces with Part C (unverified). Install these files instead. Unverified: how the importer is triggered.
 - No main-session role. Codex applies a role only to a spawned or resumed session, so the orchestrator is Part C of `AGENTS.md`, not a role file. ([`child_config.rs`][child-config], [`role.rs`][role])
-- Workers see Part C. `~/.codex/AGENTS.md` reaches subagents, so every worker loads it; B0 and Part C's first line tell workers to ignore Part C. Instructions only.
+- Workers see Part C. Inferred, with no source line found: `~/.codex/AGENTS.md` reaches subagents, so every worker loads it. B0 and Part C's first line tell workers to ignore Part C. Instructions only.
 - The spawn limit is instructions only. `spawn_agent` takes any defined role, and the built-in roles `default`, `worker`, and `explorer` always exist. A role with the same name shadows a built-in one, which is how `explorer.toml` replaces the built-in `explorer`. An omitted `agent_type` means `default`, so Part C spawns every worker by its `agent_type` and never omits it. ([`role.rs`][role], [`multi_agents_spec.rs`][ma-spec])
-- Resume tools differ by version. V2 has `followup_task` (gives an agent a new task and starts a turn) and `send_message` (queues a message without a turn). V1 has `send_input` and `resume_agent`, which reopens a closed agent so it can take `send_input`. B4 and Part C resume with `followup_task` or `send_input`. ([`multi_agents_spec.rs`][ma-spec], [`spec_plan.rs`][spec-plan])
+- Resume tools differ by version. V2 has `followup_task` (gives an agent a new task and starts a turn) and `send_message` (queues a message without a turn). V1 has `send_input` and `resume_agent`, which reopens a closed agent so it can take `send_input`. B4 and Part C resume with `followup_task` or `send_input`. The ledger's `id` is the handle `spawn_agent` returned: `task_name` under V2, `agent_id` under V1. ([`multi_agents_spec.rs`][ma-spec], [`spec_plan.rs`][spec-plan])
 - Loop budgets (B4) and the orchestrator's "no product-code edits" rule are enforced by instructions only.
 - Unverified: whether the Codex desktop app loads `~/.codex/agents/` exactly like the CLI. ([docs][docs])
 
@@ -154,3 +157,4 @@ Source links point at openai/codex commit `11da6b9` (2026-10-07).
 - All repo instruction files share a 32 KiB budget (`project_doc_max_bytes`). The file that crosses it is truncated. Repo files are skipped in untrusted projects.
 - A repo `CLAUDE.md` is not loaded unless it is listed in `project_doc_fallback_filenames`. B1 still tells the agent to read it as part of the repo's instruction chain.
 - A role in a repo's `.codex/agents/` with the same `name` replaces the user-level one for that repo. This applies in trusted projects: project config outranks user config, and fields the repo role leaves out are merged from the user role. ([`config_layer_source.rs`][layers], [`loader.rs`][loader])
+- A repo override of a worker role must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
