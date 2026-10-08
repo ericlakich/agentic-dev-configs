@@ -88,9 +88,10 @@ intake -> orient -> plan -> build -> verify -> ship -> report
 
 orient -> orient   unknowns get one re-brief, then go into the question batch
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
-verify -> build    in-scope findings become fix briefs; at most 3 fix rounds
+verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
 verify -> plan     a design-level finding: re-plan
-any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change
+any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change,
+                   a pre-existing or flaky gate failure
 ```
 
 Each phase hands bounded units to workers, and each worker runs its own inner loop:
@@ -98,18 +99,21 @@ Each phase hands bounded units to workers, and each worker runs its own inner lo
 ```
 intake      orchestrator      not code: answer; PR review: pr-review skill; code change: orient
 orient      explorer x N      search, read, check; at most 3 widening rounds per question
-plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions
+            orchestrator      tracker and candidate tickets, workflow skill, standards, real gates
+plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions;
+                              then the ticket (match or new) and its branch
 build       implementer x N   red, green, check; at most 3 attempts per failing check
             orchestrator      read each unit's diff and commit it
-verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, or regressed
+verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
 ship        orchestrator      push, PR, move the ticket, link both ways, stop
 report      orchestrator      fixed B7 format
 
-side issue  side-fix          own ticket, branch, and PR in a worktree the orchestrator creates; scaled-down loop, 3 verify rounds, spawned in the background
+side issue  side-fix          own ticket, branch, and PR in a worktree the orchestrator creates; scaled-down loop, 3 fix rounds, spawned in the background
+                              cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
-Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of units, verify rounds, open findings, and side tickets. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, and side tickets. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
 
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
 
@@ -131,7 +135,7 @@ Loop budgets (B4) are enforced by instructions only.
 | Read-only enforcement | Prompt; Bash kept | Prompt; no `edit` alias, but `execute` kept |
 | Background | `background: true` on side-fix | Chosen per spawn, not in the agent file; the orchestrator spawns side-fix in the background (B3, B9) |
 | Worktree isolation | `isolation: worktree` on side-fix | Per session only (`/new worktree`, `--worktree`); the orchestrator creates `.worktrees/<TICKET-ID>` for side-fix (B3) |
-| Nested subagents | side-fix spawns `reviewer` and `verifier` | Same; tool filters carry into nested subagents |
+| Nested subagents | side-fix spawns `reviewer` and `verifier`; if it cannot spawn, it stops at ready for verify | Same, with the same fallback; tool filters carry into nested subagents |
 | Model selection | `model: inherit` | `model` unset, so it inherits |
 
 ## Known gaps
@@ -155,3 +159,4 @@ Loop budgets (B4) are enforced by instructions only.
 - Copilot CLI reads a repo's `.github/copilot-instructions.md`, `.github/instructions/**`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and `.claude/rules`, at the root, the cwd, the directories in between, and nested paths. They are combined with this file and de-duplicated, with no general precedence order. If they conflict and the A3 order doesn't settle it, the agent stops and asks. ([custom instructions](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions))
 - `/instructions` toggles individual files; `--no-custom-instructions` skips them all.
 - A repo's `.github/agents/<name>.agent.md` or `.claude/agents/` agent does not replace the user-level agent with the same ID. The user-level agent wins, then `.github/agents/`, then `.claude/agents/`. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference))
+- A repo agent that stands in for a worker (it loads only where you have no user-level agent with that ID) must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
