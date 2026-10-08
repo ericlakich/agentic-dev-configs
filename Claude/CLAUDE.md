@@ -51,7 +51,7 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
 
 ### B3. Unrelated issues found mid-task
 - Do not fold them into the current branch. One ticket, one PR.
-- Create a ticket for the issue without asking (B2 rules), note which ticket you found it under, then spawn the `side-fix` subagent to handle it end to end in its own scaled-down loop (B4): its own `<TICKET-ID>/<slug>` branch from the correct base, fix, gates, PR. It runs in the background in a separate git worktree, so it never touches the main branch's working tree. Pass it the repo's B2 conventions in the brief.
+- Create a ticket for the issue without asking (B2 rules), note which ticket you found it under, then spawn the `side-fix` subagent to handle it end to end in its own scaled-down loop (B4): its own `<TICKET-ID>/<slug>` branch from the correct base, fix, gates, PR. If it cannot spawn agents, it stops at ready for verify, and the orchestrator runs its verify loop and ships it (orchestrator Side loops). It runs in the background in a separate git worktree, so it never touches the main branch's working tree. Pass it the repo's B2 conventions in the brief.
 - Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: open its PR first, ask me to merge it or stack the main branch on it, and record the ordering constraint in both PRs under "Risk and rollout".
 - Committed secrets: stop and flag immediately. That is a rotation, not a cleanup.
 - Report every side ticket and PR in the final summary (B7).
@@ -59,7 +59,7 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
 ### B4. Agentic loops
 A loop gathers context, acts, checks against ground truth, and decides, until an exit test passes, a budget runs out, progress stalls, or input is needed. Ground truth is outside the model: command output, a test result, file content, a verdict from an agent that did not write the code. Never your own belief that you are done.
 - **Contract.** Every loop, outer or inner, has a goal (one sentence), an exit test (the observable condition that means done), evidence (the ground truth checked on every pass), a budget (max passes), a stall rule, and an exit state.
-- **Exit states.** The first line of every worker report is `Status: <state> after <n> passes: <one-line reason>`.
+- **Exit states.** The first line of every worker report is `Status: <state> after <n> passes: <one-line reason>`. A report without that line counts as `partial`.
   - `done`: exit test passed; evidence attached.
   - `partial`: stopped on budget or stall; say which, what passed, and what remains.
   - `blocked`: needs a change outside your scope or authority (other files, design, environment, permission).
@@ -67,17 +67,17 @@ A loop gathers context, acts, checks against ground truth, and decides, until an
 - **Default budgets.** A brief or I may override them; the orchestrator names any override in the ledger (B8).
   - explorer: at most 3 widening rounds per question.
   - implementer: at most 3 fix attempts on any one failing check.
-  - Verify loop (orchestrator, and side-fix's own): at most 3 fix rounds after the first verify.
-  - Re-brief of the same worker for the same goal after `partial`: once (narrow the goal or split the unit), then escalate.
+  - Verify loop (the orchestrator's, side-fix's own, or the one the orchestrator runs for side-fix): at most 3 fix rounds after the first verify. The count does not reset after a re-plan.
+  - Re-brief of the same worker for the same goal after `partial`: once (narrow the goal or split the unit), then escalate. A fresh spawn after a stall counts as that one re-brief; never chain fresh spawns.
   - Re-plan: once per ticket without asking. A second re-plan, or any re-plan that changes scope or a public contract, comes to me.
-- **Stall rule.** Stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence (no new finding, no diff change, no new information). Never repeat an identical action expecting a different result.
+- **Stall rule.** Stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence (no new finding, no diff change, no new information). Never repeat an identical action expecting a different result. In the verify loop the stricter Phase 4 rule wins: a finding still open after its fix, or a gate failing the same way after its fix, stops it.
 - **Flaky.** A check that changes result with no code change is flaky. Re-run it once to confirm, then report it as flaky. Never loop on it, and never count a flaky pass as a pass.
-- **Escalation.** The orchestrator sends me one message (A1 batch rules) on: `needs-input`; outer budget exhausted; outer stall; a scope or public-contract change; a standards conflict (A3); a hard-rail event (committed secret, production action); any `blocked` only I can clear. The message holds the current ledger, the decision needed, the options, and a recommendation.
-- **Resume vs fresh.** Resume the same worker (it keeps its context) for its own unit: a fix pass, a narrowed goal, integration feedback. Spawn fresh when independence matters (every reviewer round) or when the worker stalled twice (its context is polluted). If a worker cannot be resumed, re-spawn it with its prior report and the findings in the brief.
+- **Escalation.** The orchestrator sends me one message (A1 batch rules) on: `needs-input` (collected, and sent once no unparked unit is still running); outer budget exhausted; outer stall; a scope or public-contract change; a standards conflict (A3); a hard-rail event (committed secret, production action); a pre-existing or flaky gate failure (whether to ship with it); any `blocked` only I can clear. The message holds the current ledger, the decision needed, the options, and a recommendation.
+- **Resume vs fresh.** Resume the same worker (it keeps its context) for its own unit: a fix pass, a narrowed goal, integration feedback. Spawn fresh when independence matters (every reviewer round) or when the worker stalled (its context is polluted; that spawn is the one re-brief). If a worker cannot be resumed, re-spawn it with its prior report and the findings in the brief.
 - **Outer loop.** The orchestrator runs these phases; `~/.claude/agents/orchestrator.md` holds each phase's exit test, decision rules, and back-edges.
   0. Intake: not a code change -> answer under Part A; a PR review -> the `pr-review` skill; a code change -> the loop.
-  1. Orient: `explorer`s map the code; ticket (B2), workflow skill, standards, and real gates (B1).
-  2. Plan: units with disjoint file scopes, each with an exit test and gates; one question batch.
+  1. Orient: `explorer`s map the code; tracker and candidate tickets (B2), workflow skill, standards, and real gates (B1).
+  2. Plan: units with disjoint file scopes, each with an exit test and gates; one question batch; then the ticket resolved (B2) and its branch.
   3. Build: one `implementer` per unit; the orchestrator reads each diff and commits it.
   4. Verify: a fresh `reviewer` and a `verifier` each round; findings return as fix briefs.
   5. Ship: per B2.
@@ -103,8 +103,8 @@ Ticket: <TICKET-ID> (Project: ...)
 Branch: <TICKET-ID>/slug | PR: <link> | Base: <branch>
 What changed: 2 to 4 lines, behavior first
 Verified: <commands run> -> <results>; anything not run and why
-Loops: verify rounds <n>/<budget>; escalations: <list or none>
-Side tickets: <TICKET-ID> (PR link), or none
+Loops: fix rounds <n>/<budget>; escalations: <list or none>
+Side tickets: <TICKET-ID> (PR link, or in progress with its worktree path and branch), or none
 Open questions / follow-ups: ..., or none
 ```
 
@@ -112,14 +112,15 @@ Open questions / follow-ups: ..., or none
 - One ticket per session. Do not carry a session across unrelated tickets.
 - Keep `CLAUDE.md` files short. Long references live in their own files and get `@imported`.
 - Prefer `explorer` subagents over loading large parts of the codebase into the main context.
-- The orchestrator keeps a ledger and re-posts it at every phase change, after every verify round, before any long step, and in every escalation. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory.
+- The orchestrator keeps a ledger and re-posts it at every phase change, after every verify round, before any long step, and in every escalation. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker ID the tool returned, to resume it by (omit it where the tool cannot resume); a side ticket shows `fix round` only while the orchestrator runs its verify loop.
 
 ```
 Ledger: <TICKET-ID> | branch <name> | base <branch> | phase <orient|plan|build|verify|ship|report>
-Units: U1 <agent> <status> <paths> | U2 ...
-Verify: round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
-Findings open: R3 [major] path:line, R5 [minor] ... | closed: R1, R2
-Side tickets: <ID> <status>, or none
+Budgets: default | <overrides>
+Units: U1 <agent> <status> <paths> id <worker-id> | U2 ...
+Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
+Findings open: R3 [major] path:line, R5 [minor] ... | closed: R1, R2 | disputed: R4 <reason>
+Side tickets: <ID> <status> id <worker-id> [fix round <n>/<budget>], or none
 Waiting on: <user|agent|nothing>: <what>
 Next: <one action>
 ```
