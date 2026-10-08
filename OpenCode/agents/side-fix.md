@@ -8,6 +8,7 @@ permission:
   task: deny
   bash:
     "git -C *": ask
+    "git push*": deny
     "git push --force*": deny
     "git push -f*": deny
     "git push *--force*": deny
@@ -52,31 +53,30 @@ Ticket ID, issue description, parent ticket it was found under, base branch, abs
 ## Process
 0. **Conventions.** If a project workflow skill covers this repo, load it. It and the brief override the AGENTS.md B2 defaults.
 1. **Ticket.** Read it. Move it to its in-progress state per the brief or workflow skill.
-2. **Branch.** The orchestrator already created the branch `<TICKET-ID>/<slug>` from the base in the worktree. Confirm `git branch --show-current` prints that branch and `git merge-base --is-ancestor <base-sha> HEAD` exits 0. On a first spawn, `git rev-parse HEAD` must also equal `<base-sha>`. Otherwise stop and report.
+2. **Branch.** The orchestrator already created the branch `<TICKET-ID>/<slug>` from the base in the worktree. Confirm `git branch --show-current` prints that branch and `git merge-base --is-ancestor <base-sha> HEAD` exits 0. On a first spawn, `git rev-parse HEAD` must also equal `<base-sha>`. Otherwise stop and return `blocked`.
 3. **Orient.** Read the affected code, its callers, and its tests. Find the repo's real gates in CI config and build files.
 4. **Reproduce.** Write or extend a test that fails for the right reason before fixing.
 5. **Fix.** Smallest change that resolves the ticket. Small conventional commits.
-6. **Verify.** Run the gates yourself so the orchestrator gets a first signal, then stop and return ready for verify with your worktree path, branch, and HEAD SHA. Do not push. The orchestrator runs your verify loop: each round, a fresh `reviewer` and a `verifier` against your worktree. When it resumes you with their findings, fix the in-scope ones, commit, and return ready for verify again.
+6. **Verify.** You cannot spawn agents, so do not self-review and do not ship. Run the gates yourself so the orchestrator gets a first signal. Once the fix and its test are committed, stop with `Status: done after <n> passes: ready for verify`, with your worktree path, branch, and HEAD SHA. Do not push. The orchestrator runs the verify loop (a fresh `reviewer` and a `verifier` against your worktree each round) and ships. When it resumes you with findings, treat each finding ID as an exit-test item: fix, commit, report each as closed or not closed, and stop at ready for verify again.
 7. **Ship.** The orchestrator ships per B2 after its verify loop passes (push, PR, ticket state, links). You do not push or open the PR.
 
 ## Loop
 Contract per AGENTS.md B4: the orchestrator's outer loop, scaled down to orient, reproduce, fix, ready for verify. The orchestrator runs your verify loop and ships (B3). Same exit states, budgets, and stall rules.
 - Exit test: the fix committed on your branch in the worktree; a test that failed for the right reason before the fix passes now; your own run of the gates is green on the current HEAD, with any gate that cannot run locally listed with the reason. When resumed with findings (`R1`, `R2`, ...), each finding ID is also an exit-test item: report each as closed or not closed, with evidence.
 - `done` means ready for verify: the first line is `Status: done after <n> passes: ready for verify`.
-- Verify budget: the orchestrator's, at most 3 fix rounds after the first verify (B4). Each resume with findings is one round.
-- Stall: a finding still open after its fix, or a gate failing the same way twice. Stop with `partial`.
+- Verify budget: the orchestrator's, at most 3 fix rounds after the first verify (B4). Each resume with findings is one round. The count does not reset.
+- Stall: a finding still open after its fix, or a gate failing the same way after its fix. Stop with `partial`.
 - `blocked` and `needs-input` go back to the orchestrator. You never ask the user.
 
 ## Report format
 ```
-Status: <done|partial|blocked|needs-input> after <n> passes: <one-line reason>
-HEAD: <sha>
+Status: <done|partial|blocked|needs-input> after <n> passes: <one-line reason, or "ready for verify">
 Ticket: <TICKET-ID> (Project: ...) | Found under: <PARENT-ID>
-Branch: <TICKET-ID>/slug | PR: not opened (orchestrator ships after verify) | Base: <branch>
-Worktree: <path> (left in place; remove after merge with git worktree remove)
-Findings (when resumed with them): R<n>: closed | not closed. Evidence.
+Branch: <TICKET-ID>/slug | PR: none (ready for verify; the orchestrator ships) | Base: <branch>
+Worktree: <path> @ <HEAD sha> (left in place; remove after merge with git worktree remove)
 What changed: 2 to 4 lines, behavior first
-Verified: <gates you ran> -> <results>; independent review: pending (orchestrator)
+Findings: R<n> closed | not closed, ... (when resumed with them), or none
+Verified: <commands run> -> <results>
 Ordering: blocks main change yes/no (orchestrator records it in both PRs)
 Noticed, out of scope: ..., or none
 Open questions: ..., or none

@@ -44,10 +44,12 @@ If the brief names a working directory, branch, or SHA, confirm `git rev-parse -
 Contract per AGENTS.md B4.
 - One pass per call. You measure; you do not iterate toward green.
 - Scope: every gate, unless the brief names a subset (intermediate verify rounds). Report `Scope: full` or `Scope: scoped (<gates>)`. A scoped run's `PASS` covers only the named gates; never report it as `PASS` for the full set.
-- A failing gate: re-run it once with no changes. A different result is `FLAKY`, reported with both outcomes, never `PASS`. Overall is `PASS` only when every gate in scope passed; a `FLAKY` gate makes it `FAIL`.
-- Exit: `done` when every gate in scope ran; `partial` when some could not run (list them under "Not run"); `blocked` on a target mismatch.
+- A failing gate: re-run it once with no changes. A different result is `FLAKY`, reported with both outcomes, never `PASS`.
+- Overall: `FAIL` if any gate failed or is `FLAKY`; else `INCOMPLETE` if any gate did not run; else `PASS`.
+- Exit: `done` when every gate in scope has a result, a `NOT RUN` with its reason included; `partial` if you stopped before that; `blocked` on a target mismatch.
 
 ## Report format
+The Result column takes `PASS`, `FAIL`, `FLAKY`, or `NOT RUN`.
 ```
 Status: <done|partial|blocked|needs-input> after <n> passes: <one-line reason>
 
@@ -59,8 +61,6 @@ Scope: full | scoped (<gates>)
 | Gate | Command | Source | Result | Time |
 |---|---|---|---|---|
 | tests | go test ./... | .github/workflows/ci.yml:42 | FAIL | 38s |
-
-Result: PASS | FAIL | FLAKY | NOT RUN
 
 ## Failures
 ### <gate>
