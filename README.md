@@ -36,7 +36,7 @@ The global instructions file has two parts.
 - **Inner loops.** Each worker runs its own loop on one bounded unit. Its report starts `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions.
 - **Verify.** An evaluator loop: each round, a fresh `reviewer` and a `verifier` check the full diff, and findings go back to an implementer as fix briefs. At most 3 fix rounds.
 - **Limits.** Every loop has a budget and a stall rule: stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence. When a budget runs out, progress stalls, or only you can decide, the orchestrator escalates in one message: the ledger, the decision needed, the options, and a recommendation.
-- **Ledger.** The orchestrator tracks units, verify rounds, open findings, and side tickets in a ledger. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+- **Ledger.** The orchestrator tracks units, fix rounds, open findings, and side tickets in a ledger. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
 
 `Claude/README.md` has the phase diagram and each worker's loop; B4 of the global file has the full contract.
 
@@ -59,7 +59,7 @@ Install each copy into its own tool's skills directory (see the tool's README), 
 
 ## How the tools differ
 
-Section numbers, rules, agent roles, loop contracts, and report formats match across directories. Where a tool lacks a capability, the orchestrator's form, B0, B3, B4's resume line, B9, and side-fix's hand-off change:
+Section numbers, rules, agent roles, loop contracts, and report formats match across directories. Where a tool lacks a capability, the orchestrator's form, B0, B3, B4's resume and verify-budget lines, B9, and side-fix's hand-off change:
 
 | Capability | Claude | Codex | Cursor | Gemini | Copilot | OpenCode |
 |---|---|---|---|---|---|---|
@@ -68,16 +68,16 @@ Section numbers, rules, agent roles, loop contracts, and report formats match ac
 | Per-agent worktree | Yes | No | Yes, requested per spawn (worktree or cloud copy) | No | No | No |
 | A subagent can spawn subagents | Yes | V1 no, V2 yes (the port keeps spawning to the orchestrator) | One level below main | No | Yes | No by default (`subagent_depth` defaults to 1); the port does not rely on nesting |
 | Orchestrator form | Main-thread agent (`claude --agent orchestrator`) | Part C of the global file | Part C of the global file | Part C of the global file | Agent file (`copilot --agent orchestrator`) | `mode: primary` agent (`opencode --agent orchestrator`) |
-| Hard spawn allowlist on the orchestrator | Opt-in `tools` line; drops unlisted MCP tools | No (instructions only) | No (instructions only) | No (instructions only) | No (instructions only) | Yes (`permission.task`) |
-| Resume a worker with its context | Yes (`SendMessage`) | Yes (V1 `send_input`, V2 `followup_task`) | Yes (agent ID) | No (re-spawn) | Running agents only (`write_agent`); otherwise re-spawn | Yes (`task_id`) |
+| Hard spawn allowlist on the orchestrator | Opt-in, orchestrator only: `tools` line; drops unlisted MCP tools | No (instructions only) | No (instructions only) | Opt-in, session-wide: `agents.overrides.<name>.enabled: false` | Opt-in, session-wide: `subagents.disabledSubagents` | Yes (`permission.task`) |
+| Resume a worker with its context | Yes (`SendMessage`) | Yes (V1 `send_input`, V2 `followup_task`) | Yes (agent ID) | No (re-spawn) | Finished worker: not documented, re-spawn; `write_agent` messages a running one | Yes (`task_id`) |
 
 Five fallbacks cover the gaps:
 
 - **No per-agent worktree (Codex, Gemini, Copilot, OpenCode):** the orchestrator creates `.worktrees/<TICKET-ID>` inside the repo, excluded through `.git/info/exclude` and never `.gitignore`, and passes side-fix the path and base SHA. side-fix confirms it is in that worktree before changing anything. Gates that don't read git excludes, such as some lint and test globs, can pick up those files while the worktree exists.
 - **side-fix can't spawn (Codex, Gemini, OpenCode):** side-fix stops at "ready for verify". The orchestrator runs side-fix's verify loop against the worktree (a fresh `reviewer` and a `verifier` each round, at most 3 fix rounds), sends findings back to side-fix, and ships the side PR itself.
-- **Spawn blocked at runtime (any tool):** side-fix runs the gates itself and says in its report that the review was not independent.
+- **Spawn blocked at runtime (any tool):** side-fix stops at "ready for verify" with its worktree path, branch, and HEAD; the orchestrator runs its verify loop and ships it, as above.
 - **No main-thread agent (Codex, Cursor, Gemini):** the orchestrator procedure is Part C of the global file; it applies only to the main session, and workers ignore it.
-- **No resume (Gemini; Copilot after a worker finishes):** re-spawn with the prior report and findings.
+- **No documented resume (Gemini; Copilot after a worker finishes):** re-spawn with the prior report and findings.
 
 ## Keeping the ports in sync
 
@@ -91,7 +91,13 @@ for f in Codex/AGENTS.md Cursor/user-rules.md Gemini/GEMINI.md Copilot/copilot-i
 done
 ```
 
-Expect hunks in A3, B0, B1, B3, B4, B8, and B9. B0's launch line and B4's "Resume vs fresh" line differ per tool. In Part C ports, the last hunk is the `## Part C` heading.
+Expect hunks only here:
+
+- A3, B1, and B8: instruction file names and the instruction chain.
+- B0: the line that says where the orchestrator runs and is defined, and the plain-session line. Codex also changes the worker line.
+- B3: the side-fix bullet.
+- B4: the "Resume vs fresh" line, the "Outer loop" pointer line, and, where side-fix can't spawn (Codex, Gemini, OpenCode), the verify-budget line.
+- B9: the intro line, the tool notes, and in some ports the `orchestrator` and `side-fix` rows. In Part C ports, the last hunk combines B9's changes with the `## Part C` heading.
 
 Then compare the orchestrator. Part C ports hold it at the end of the global file; Copilot and OpenCode have an agent file:
 
@@ -104,12 +110,18 @@ for f in Copilot/agents/orchestrator.agent.md OpenCode/agents/orchestrator.md; d
 done
 ```
 
-Every hunk should be a tool mechanic: frontmatter, Part C's heading and heading levels, Operating rules, spawn and resume lines, or side-fix's verify loop. Diff the workers and skills file by file the same way, for example `diff Claude/skills/pr-review/SKILL.md Gemini/skills/pr-review/SKILL.md`.
+Every hunk should be a tool mechanic:
+
+- Agent-file ports: the frontmatter.
+- Part C ports: the `## Part C` heading, a line limiting Part C to the main session, and every heading one level down.
+- Every port: the intro line (it names the global file), the Operating rules lines on the default prompt and on spawning and resuming, and Side loops. Most ports also change the background-workers line; where a worker can't be resumed, the resume lines in Phases 3 and 4 change too.
+
+Diff the workers and skills file by file the same way, for example `diff Claude/skills/pr-review/SKILL.md Gemini/skills/pr-review/SKILL.md`.
 
 ## Adding a tool
 
 1. From the tool's official docs, find: the global instructions path, the subagent and skills directories and file formats, the supported frontmatter fields, and whether it supports tool restriction, background runs, per-agent worktrees, and nested subagents. Also find whether the main session can run as a custom agent, whether a subagent can be resumed with its context, and whether spawns can be restricted per agent.
-2. Create `<Tool>/` with the instructions file, the agent definitions, the skills, and a README with the same sections as the existing ports (Contents, Install, Differences from Claude, Known gaps, Per-repo overrides). Ship six agents (the orchestrator and the five workers) if the main session can run as a custom agent; otherwise ship the five workers and put the orchestrator in Part C of the global file.
+2. Create `<Tool>/` with the instructions file, the agent definitions, the skills, and a README with the same sections as the existing ports (Contents, Install, Run the orchestrator, How it works, Differences from Claude, Known gaps, Per-repo overrides). Ship six agents (the orchestrator and the five workers) if the main session can run as a custom agent; otherwise ship the five workers and put the orchestrator in Part C of the global file.
 3. Change only what the tool's mechanics force. Use the fallbacks above where the tool lacks isolation, nesting, a main-thread agent, or resume.
 4. Add the tool to the Layout and capability tables and to both sync commands here.
 
