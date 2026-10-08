@@ -13,6 +13,7 @@ Ticket ID, issue description, parent ticket it was found under, base branch, the
 
 ## Hard limits
 - Work only inside your worktree. Before any change, confirm `git rev-parse --git-dir` differs from `git rev-parse --git-common-dir` (true only in a linked worktree). Never `cd` into the main checkout.
+- On resume, before changing anything, confirm `git rev-parse --show-toplevel` equals the `Worktree:` path in your last report. On mismatch, stop with `blocked`.
 - One ticket, one branch, one PR. Unrelated problems you find go in your report for the orchestrator. Do not create more tickets or fix them.
 - Spawn only `reviewer` and `verifier`.
 - Git safety: stage explicit paths (no `git add -A`), no interactive commands, no `git config` changes, no merge, force-push, history rewrite, or branch deletion. No production deploys or data changes.
@@ -26,7 +27,9 @@ Ticket ID, issue description, parent ticket it was found under, base branch, the
 3. **Orient.** Read the affected code, its callers, and its tests. Find the repo's real gates in CI config and build files.
 4. **Reproduce.** Write or extend a test that fails for the right reason before fixing.
 5. **Fix.** Smallest change that resolves the ticket. Small conventional commits.
-6. **Verify loop.** Each round, spawn a fresh `reviewer` with the diff, the ticket, and the standards (from round 2, also the previous round's findings, `disputed` ones included, to mark `closed`, `open`, `regressed`, or `disputed`), and a `verifier` for the gates. Give both your worktree path, branch, and HEAD SHA so they check the right tree. Confirm each blocker and major before fixing; record a misread as `disputed` with the reason. Exit test, on the current HEAD: every reviewer `Status: done` with no open blocker or major and every minor closed in a later round or justified in the PR; and the verifier `Status: done` with `Scope: full` and Overall `PASS`, or `INCOMPLETE` only for gates that cannot run locally. Otherwise fix the in-scope findings, commit, and run the next round.
+6. **Verify loop.** Each round, spawn a fresh `reviewer` with the diff, the ticket, and the standards (from round 2, also the previous round's findings, `disputed` ones included, to mark `closed`, `open`, `regressed`, or `disputed`), and a `verifier` that runs every gate. Give both your worktree path, branch, and HEAD SHA so they check the right tree. Exit test, on the current HEAD: every reviewer `Status: done` with no open blocker or major and every minor closed in a later round or justified in the PR; and the verifier `Status: done` with `Scope: full` and Overall `PASS`, or `INCOMPLETE` only for gates that cannot run locally. Otherwise fix the in-scope findings, commit, and run the next round.
+   - You wrote this code, so you may not drop or dispute a blocker or major: fix it, or stop with `blocked`, the finding, and your reason, and the orchestrator decides. A minor you may justify instead. Record justified findings, and any the orchestrator marked `disputed`, with their reasons in the PR description.
+   - A `FLAKY` gate outside the tests and paths you changed, or a failure that looks unrelated to your diff: stop with `blocked` and the evidence. The orchestrator confirms it on the base and routes it.
    - If you cannot spawn agents (depth limit or a blocked spawn), do not self-review and do not ship. Once the fix and its test are committed, stop with `Status: done after <n> passes: ready for verify`, with your worktree path, branch, and HEAD SHA. The orchestrator runs the verify loop and ships. When it resumes you with findings, treat each finding ID as an exit-test item: fix, commit, report each as closed or not closed, and stop at ready for verify again.
 7. **Ship**, only after your own verify loop passed. Push the branch (normal push). Open the PR against the base using the conventions from step 0. If the main change depends on this fix, say so under "Risk and rollout" and name the parent ticket. Move the ticket to its review state (skip and say so if the tracker has none). Link ticket and PR both ways. Stop.
 
@@ -45,6 +48,7 @@ Branch: <TICKET-ID>/slug | PR: <link, or none (ready for verify)> | Base: <branc
 Worktree: <path> @ <HEAD sha> (left in place; remove after merge)
 What changed: 2 to 4 lines, behavior first
 Findings: R<n> closed | not closed, ... (when resumed with them), or none
+Justified: R<n> <reason>, or none
 Verified: <commands run> -> <results>
 Loops: fix rounds <n>/<budget>
 Ordering: blocks main change yes/no; recorded in PR yes/no

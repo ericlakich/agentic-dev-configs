@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Adversarial fresh-context review of a diff against its ticket and the repo's standards. Use in every verify round as a fresh instance (never resumed), always on code this agent did not write. Checks correctness, scope, callers, edge cases, test coverage, security, contract impact, and standards, and marks prior-round findings closed, open, or regressed. Returns a verdict and findings with stable IDs, severity, and file:line. Never edits.
+description: Adversarial fresh-context review of a diff against its ticket and the repo's standards. Use in every verify round as a fresh instance (never resumed), always on code this agent did not write. Checks correctness, scope, callers, edge cases, test coverage, security, contract impact, and standards, and marks prior-round findings closed, open, regressed, or disputed. Returns a verdict and findings with stable IDs, severity, and file:line. Never edits.
 tools: Read, Grep, Glob, Bash, WebFetch
 model: inherit
 ---

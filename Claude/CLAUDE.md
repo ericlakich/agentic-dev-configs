@@ -72,14 +72,14 @@ A loop gathers context, acts, checks against ground truth, and decides, until an
   - Re-plan: once per ticket without asking. A second re-plan, or any re-plan that changes scope or a public contract, comes to me.
 - **Stall rule.** Stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence (no new finding, no diff change, no new information). Never repeat an identical action expecting a different result. In the verify loop the stricter Phase 4 rule wins: a finding still open after its fix, or a gate failing the same way after its fix, stops it.
 - **Flaky.** A check that changes result with no code change is flaky. Re-run it once to confirm, then report it as flaky. Never loop on it, and never count a flaky pass as a pass.
-- **Escalation.** The orchestrator sends me one message (A1 batch rules) on: `needs-input` (collected, and sent once no unparked unit is still running); outer budget exhausted; outer stall; a scope or public-contract change; a standards conflict (A3); a hard-rail event (committed secret, production action); a pre-existing or flaky gate failure (whether to ship with it); any `blocked` only I can clear. The message holds the current ledger, the decision needed, the options, and a recommendation.
-- **Resume vs fresh.** Resume the same worker (it keeps its context) for its own unit: a fix pass, a narrowed goal, integration feedback. Spawn fresh when independence matters (every reviewer round) or when the worker stalled (its context is polluted; that spawn is the one re-brief). If a worker cannot be resumed, re-spawn it with its prior report and the findings in the brief.
+- **Escalation.** The orchestrator sends me one message (A1 batch rules) on: `needs-input` (collected, and sent once no unparked unit is still running); outer budget exhausted; outer stall; a scope or public-contract change; a standards conflict (A3); a hard-rail event (committed secret, production action); a pre-existing or flaky failure the diff did not cause (whether to ship with it); any `blocked` only I can clear. The message holds the current ledger, the decision needed, the options, and a recommendation.
+- **Resume vs fresh.** Resume the same worker (it keeps its context) for its own unit: a fix pass, a narrowed goal, integration feedback. Spawn fresh when independence matters (every reviewer or verifier run) or when the worker stalled (its context is polluted; that spawn is the one re-brief). Never spawn a fresh side-fix while its worktree exists. If a worker cannot be resumed, re-spawn it with its prior report and the findings in the brief.
 - **Outer loop.** The orchestrator runs these phases; `~/.claude/agents/orchestrator.md` holds each phase's exit test, decision rules, and back-edges.
   0. Intake: not a code change -> answer under Part A; a PR review -> the `pr-review` skill; a code change -> the loop.
-  1. Orient: `explorer`s map the code; tracker and candidate tickets (B2), workflow skill, standards, and real gates (B1).
+  1. Orient: the orchestrator searches the tracker (B2) and loads the workflow skill; `explorer`s map the code, standards, and real gates (B1).
   2. Plan: units with disjoint file scopes, each with an exit test and gates; one question batch; then the ticket resolved (B2) and its branch.
   3. Build: one `implementer` per unit; the orchestrator reads each diff and commits it.
-  4. Verify: a fresh `reviewer` and a `verifier` each round; findings return as fix briefs.
+  4. Verify: fresh `reviewer`s and one `verifier` each round; findings return as fix briefs.
   5. Ship: per B2.
   6. Report: per B7.
 
@@ -103,7 +103,7 @@ Ticket: <TICKET-ID> (Project: ...)
 Branch: <TICKET-ID>/slug | PR: <link> | Base: <branch>
 What changed: 2 to 4 lines, behavior first
 Verified: <commands run> -> <results>; anything not run and why
-Loops: fix rounds <n>/<budget>; escalations: <list or none>
+Loops: fix rounds <n>/<budget>; escalations: <from the ledger's Decisions line, or none>
 Side tickets: <TICKET-ID> (PR link, or in progress with its worktree path and branch), or none
 Open questions / follow-ups: ..., or none
 ```
@@ -112,15 +112,16 @@ Open questions / follow-ups: ..., or none
 - One ticket per session. Do not carry a session across unrelated tickets.
 - Keep `CLAUDE.md` files short. Long references live in their own files and get `@imported`.
 - Prefer `explorer` subagents over loading large parts of the codebase into the main context.
-- The orchestrator keeps a ledger and re-posts it at every phase change, after every verify round, before any long step, and in every escalation. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker ID the tool returned, to resume it by (omit it where the tool cannot resume); a side ticket shows `fix round` only while the orchestrator runs its verify loop.
+- The orchestrator keeps a ledger and re-posts it at every phase change, after every verify round, before any long step, and in every escalation. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker ID the tool returned, to resume it by (omit it where the tool cannot resume); a side ticket shows `fix round` only while the orchestrator runs its verify loop. `Decisions` records my answers: question-batch answers, approved B2 defaults, ship-with-failure agreements.
 
 ```
 Ledger: <TICKET-ID> | branch <name> | base <branch> | phase <orient|plan|build|verify|ship|report>
 Budgets: default | <overrides>
 Units: U1 <agent> <status> <paths> id <worker-id> | U2 ...
 Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
-Findings open: R3 [major] path:line, R5 [minor] ... | closed: R1, R2 | disputed: R4 <reason>
+Findings open: R3 [major] path:line, R5 [minor] ... | closed: R1, R2 | disputed: R4 <reason> | justified: R6 <reason>
 Side tickets: <ID> <status> id <worker-id> [fix round <n>/<budget>], or none
+Decisions: <what> -> <answer> (escalation <n>), or none
 Waiting on: <user|agent|nothing>: <what>
 Next: <one action>
 ```
