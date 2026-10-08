@@ -80,9 +80,10 @@ intake -> orient -> plan -> build -> verify -> ship -> report
 
 orient -> orient   unknowns get one re-brief, then go into the question batch
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
-verify -> build    in-scope findings become fix briefs; at most 3 fix rounds
+verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
 verify -> plan     a design-level finding: re-plan
-any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change
+any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change,
+                   a pre-existing or flaky gate failure
 ```
 
 Each phase hands bounded units to workers, and each worker runs its own inner loop:
@@ -90,18 +91,21 @@ Each phase hands bounded units to workers, and each worker runs its own inner lo
 ```
 intake      orchestrator      not code: answer; PR review: pr-review skill; code change: orient
 orient      explorer x N      search, read, check; at most 3 widening rounds per question
-plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions
+            orchestrator      tracker and candidate tickets, workflow skill, standards, real gates
+plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions;
+                              then the ticket (match or new) and its branch
 build       implementer x N   red, green, check; at most 3 attempts per failing check
             orchestrator      read each unit's diff and commit it
-verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, or regressed
+verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
 ship        orchestrator      push, PR, move the ticket, link both ways, stop
 report      orchestrator      fixed B7 format
 
-side issue  side-fix          own ticket, branch, isolated copy, and PR; scaled-down loop, 3 verify rounds, background
+side issue  side-fix          own ticket, branch, isolated copy, and PR; scaled-down loop, 3 fix rounds, background
+                              cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
-Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of units, verify rounds, open findings, and side tickets. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of budgets, units and their agent IDs, fix rounds, findings, and side tickets. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
 
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
 
@@ -120,7 +124,7 @@ The workflow assumes the agent can reach the repo's ticket tracker (through an M
 | Read-only enforcement | Tool list without edit tools; Bash limited by prompt | `readonly: true` on `explorer` and `reviewer` (no edits, no state-changing shell commands). `verifier` has no `readonly` because it must run builds and tests; its no-edit rule is enforced by its prompt only |
 | Background | `background: true` | `is_background: true`; output is written to `~/.cursor/subagents/` |
 | Worktree isolation | `isolation: worktree` in frontmatter | Requested in the spawn request (B3); the subagent runs in its own copy (a git worktree or a cloud environment) |
-| Nested subagents | `side-fix` spawns `reviewer` and `verifier` | Same, but only when the main agent launched `side-fix` directly |
+| Nested subagents | `side-fix` spawns `reviewer` and `verifier`; if it cannot spawn, it stops at ready for verify | Same, but only when the main agent launched `side-fix` directly; otherwise it stops at ready for verify and the orchestrator verifies and ships it |
 | Resume a worker | `SendMessage` to the agent's ID or name | Pass the agent ID the subagent run returned; it keeps its full context, also after a background run completes ([subagents](https://cursor.com/docs/subagents#resuming-subagents)) |
 | Model selection | `model: inherit` | `model: inherit` (the default) or a model ID |
 
@@ -136,7 +140,7 @@ Hooks are not part of this port. Cursor reads hooks from `~/.cursor/hooks.json`.
 - Subagents share the parent checkout unless the request asks for isolation. `side-fix` is only isolated if the orchestrator asks (B3). ([subagents](https://cursor.com/docs/context/subagents))
 - An isolated subagent's changes stay on its branch until the parent agent merges them. Do not merge `side-fix`'s branch into the main task; it ships as its own PR (B3). ([subagents](https://cursor.com/docs/context/subagents))
 - Cloud subagents use the team's MCP servers, not your local ones, so a `side-fix` running in a cloud environment may lose tracker access. ([subagents](https://cursor.com/docs/context/subagents))
-- A subagent launched by another subagent cannot launch more. If `side-fix` is not launched by the main agent, it falls back to running the gates itself and a non-independent review. ([subagents](https://cursor.com/docs/context/subagents))
+- A subagent launched by another subagent cannot launch more. If `side-fix` is not launched by the main agent, it stops at ready for verify, and the orchestrator runs its verify loop and ships it (B3). ([subagents](https://cursor.com/docs/context/subagents))
 - With the Claude port installed, Cursor also loads Claude's `orchestrator.md` from `~/.claude/agents/`, inferred from the agent locations above. It is written for Claude Code's main thread; B9 tells the main session never to spawn it. ([subagents](https://cursor.com/docs/context/subagents))
 - Unverified: user rule files in `~/.cursor/rules`. The help center mentions them, but their format is undocumented, so none ships here. ([help](https://cursor.com/help/customization/rules))
 - Unverified: whether User Rules apply in the CLI (`agent`). The CLI reads `AGENTS.md` and `CLAUDE.md` at the project root and `.cursor/rules`. If User Rules do not apply there, the CLI main agent never sees Part C. ([CLI](https://cursor.com/docs/cli/using))
@@ -148,4 +152,5 @@ Hooks are not part of this port. Cursor reads hooks from `~/.cursor/hooks.json`.
 
 - Repo rules add project rules on top of these User Rules: `.cursor/rules/*.mdc` (frontmatter `description`, `globs`, `alwaysApply`) and `AGENTS.md` at the root and in subdirectories; the CLI applies a root `CLAUDE.md` as a rule. Cursor ranks Team > Project > User. If a repo rule conflicts with these User Rules and the A3 order doesn't settle it, the agent stops and asks.
 - A repo can add agents in `.cursor/agents/` (Cursor also reads `.claude/agents/` and `.codex/agents/`; the `.cursor/` file wins on a name clash). Project agents take precedence on a name clash, so a repo's `.cursor/agents/`, `.claude/agents/`, or `.codex/agents/` agent with the same `name` replaces the user-level one, including this port's `side-fix`. ([subagents](https://cursor.com/docs/context/subagents))
+- A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
 - Worktree setup commands for a repo go in `.cursor/worktrees.json`. The CLI's `-w/--worktree [name]` creates `~/.cursor/worktrees/<repo>/<name>`. ([worktrees](https://cursor.com/docs/configuration/worktrees))
