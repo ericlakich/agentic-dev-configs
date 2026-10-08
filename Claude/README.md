@@ -88,8 +88,8 @@ Each phase hands bounded units to workers, and each worker runs its own inner lo
 
 ```
 intake      orchestrator      not code: answer; PR review: pr-review skill; code change: orient
-orient      explorer x N      search, read, check; at most 3 widening rounds per question
-            orchestrator      tracker and candidate tickets, workflow skill, standards, real gates
+orient      orchestrator      searches the tracker for candidate tickets; loads the workflow skill
+            explorer x N      code, standards, real gates; search, read, check; at most 3 widening rounds
 plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions;
                               then the ticket (match or new) and its branch
 build       implementer x N   red, green, check; at most 3 attempts per failing check
@@ -103,7 +103,7 @@ side issue  side-fix          own ticket, branch, worktree, and PR; scaled-down 
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
-Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, and side tickets. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, side tickets, and your decisions. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
 
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
 
@@ -125,6 +125,8 @@ All agents use `model: inherit`, so they run on the main session's model.
 The read-only agents have no Edit or Write tool, so the tool list blocks file edits. They keep Bash for commands like `git log` and `rg`, and only their instructions keep Bash from writing. For enforcement beyond the prompt, use a `PreToolUse` hook or Claude Code's sandbox (see the [permissions docs](https://code.claude.com/docs)). Settings-level `permissions.deny` rules apply to the whole session, not to one agent.
 
 Subagents load `~/.claude/CLAUDE.md` by default, so every worker sees the B4 loop contract. They can spawn subagents up to a default depth of 3 (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`), so orchestrator, then side-fix, then `reviewer` or `verifier` fits.
+
+Unverified: whether a resumed `isolation: worktree` subagent keeps its worktree, and whether a fresh one could take over an existing side-fix branch (git does not check out a branch that another worktree holds). So the orchestrator resumes side-fix and never re-spawns it fresh while its worktree exists, and side-fix confirms its worktree path on every resume.
 
 Loop budgets (B4) are enforced by instructions only. Claude Code's `maxTurns` agent field is an optional hard budget that stops an agent after that many turns; in v2.1.246 or later its output is also marked partial. These files do not set it.
 
