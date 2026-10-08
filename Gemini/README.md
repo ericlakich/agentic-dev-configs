@@ -82,9 +82,10 @@ intake -> orient -> plan -> build -> verify -> ship -> report
 
 orient -> orient   unknowns get one re-brief, then go into the question batch
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
-verify -> build    in-scope findings become fix briefs; at most 3 fix rounds
+verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
 verify -> plan     a design-level finding: re-plan
-any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change
+any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change,
+                   a pre-existing or flaky gate failure
 ```
 
 Each phase hands bounded units to workers, and each worker runs its own inner loop:
@@ -92,19 +93,21 @@ Each phase hands bounded units to workers, and each worker runs its own inner lo
 ```
 intake      orchestrator      not code: answer; PR review: pr-review skill; code change: orient
 orient      explorer x N      search, read, check; at most 3 widening rounds per question
-plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions
+            orchestrator      tracker and candidate tickets, workflow skill, standards, real gates
+plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions;
+                              then the ticket (match or new) and its branch
 build       implementer x N   red, green, check; at most 3 attempts per failing check
             orchestrator      read each unit's diff and commit it
-verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, or regressed
+verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
 ship        orchestrator      push, PR, move the ticket, link both ways, stop
 report      orchestrator      fixed B7 format
 
 side issue  side-fix          own ticket, branch, and worktree; scaled-down loop to ready for verify; foreground
-            orchestrator      side-fix's verify loop (3 rounds, fresh reviewer each), then its PR
+            orchestrator      side-fix's verify loop (3 fix rounds, fresh reviewer each), then its PR
 ```
 
-Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of units, verify rounds, open findings, and side tickets. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of budgets, units, fix rounds, findings, and side tickets; it has no worker IDs, because workers cannot be resumed. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
 
 A worker cannot be resumed, so a fix pass re-spawns it with its prior report and the findings in the brief (B4).
 
@@ -123,7 +126,7 @@ The workflow assumes the agent can reach the repo's ticket tracker (through an M
 | Read-only enforcement | No edit tools; Bash limited by the prompt | No `write_file` or `replace`; `run_shell_command` limited by the prompt |
 | Background | `background: true` on side-fix | None; side-fix runs in the foreground and the main task waits |
 | Worktree isolation | `isolation: worktree` on side-fix | None per agent; the orchestrator creates `.worktrees/<TICKET-ID>` (B3) |
-| Nested subagents | side-fix spawns `reviewer` and `verifier` | Not possible; side-fix stops at `ready for verify`, the orchestrator runs its verify loop and ships |
+| Nested subagents | side-fix spawns `reviewer` and `verifier`; if it cannot spawn, it stops at ready for verify | Not possible; side-fix stops at `ready for verify`, the orchestrator runs its verify loop and ships |
 | Model selection | `model: inherit` | `model` omitted, which defaults to `inherit` |
 | Main-thread orchestrator | `agents/orchestrator.md`, run with `claude --agent orchestrator` or the `agent` setting | None; Part C of `GEMINI.md`, followed by the main session |
 | Spawn allowlist | Prompt-enforced; optional `tools: Agent(...)` on the orchestrator | Prompt-enforced; optional `agents.overrides.<name>.enabled: false` or a policy deny (not shipped) |
@@ -149,7 +152,7 @@ Back-to-back subagent calls in one turn run in parallel, so B4's parallel build 
 - No main-thread agent. The orchestrator is Part C of `GEMINI.md`, and only instructions keep it in that role. Workers load `GEMINI.md` too, so they see Part C; B0 tells them to ignore it. See Run the orchestrator. [local-executor.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/local-executor.ts#L1457-L1461)
 - No nesting. Subagents cannot call other subagents, even with `*`. The orchestrator runs side-fix's verify loop (`reviewer` and `verifier` on its worktree each round), then ships. [Subagents](https://geminicli.com/docs/core/subagents/), [local-executor.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/local-executor.ts#L204-L206)
 - No resume. `invoke_agent` takes only an agent name and a prompt, and every call starts a fresh executor. Wherever B4 or Part C would resume a worker, the orchestrator re-spawns it with its prior report and the findings in the brief. [agent-tool.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/agent-tool.ts#L59-L72)
-- Turn and time limits drop the report. When a subagent hits `max_turns` or `timeout_mins`, it gets one grace turn to call `complete_task`. If it does not, the parent gets only the termination reason (for example `Agent reached max turns limit (60).`), and the worker's report is lost. B9 tells the orchestrator to treat that as `partial` with no evidence. The B4 budgets must trip first: keep units small enough that a worker reports before its limit, and raise `max_turns` or `timeout_mins` in an agent file if a limit trips in practice. Loop budgets are otherwise enforced by instructions only; this port adds no frontmatter key. [local-executor.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/local-executor.ts)
+- Turn and time limits drop the report. When a subagent hits `max_turns` or `timeout_mins`, it gets one grace turn to call `complete_task`. If it does not, the parent gets only the termination reason (for example `Agent reached max turns limit (60).`), and the worker's report is lost. B9 tells the orchestrator to treat that as `partial` with no evidence. The B4 budgets must trip first: keep units small enough that a worker reports before its limit, and raise `max_turns` or `timeout_mins` in an agent file if a limit trips in practice. Loop budgets are otherwise enforced by instructions only; this port adds no frontmatter key. [local-executor.ts, grace turn](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/local-executor.ts#L444-L529), [final result](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/local-executor.ts#L758-L834)
 - Spawn limit is instructions only. Part C spawns only the five workers, and nothing enforces it. Optional, not shipped: disable an agent with `agents.overrides.<name>.enabled: false` in `~/.gemini/settings.json`, or deny it with a policy rule. The built-in `generalist` agent inherits all tools; disabling it (`"agents": {"overrides": {"generalist": {"enabled": false}}}`) keeps work inside the role split. [registry.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/registry.ts#L433-L444)
 - No background mode. side-fix pauses the main task until it returns. [Subagents](https://geminicli.com/docs/core/subagents/)
 - No per-agent worktree. B3 has the orchestrator create one under `.worktrees/`. Session-level worktrees exist (`gemini --worktree <name>` with `experimental.worktrees: true`, default `false`, created under `.gemini/worktrees/`) but cover a whole session, not one agent. [Subagents](https://geminicli.com/docs/core/subagents/)
@@ -162,4 +165,5 @@ Back-to-back subagent calls in one turn run in parallel, so B4's parallel build 
 - A repo's `GEMINI.md` files (workspace dirs and their parents up to `.git`, plus files loaded just in time when a tool touches a directory) are concatenated with this one. If the two conflict and the A3 order doesn't settle it, the agent stops and asks. [GEMINI.md](https://geminicli.com/docs/cli/gemini-md/)
 - `CLAUDE.md` is not read by default; B1 tells the agent to read `AGENTS.md` and `CLAUDE.md` itself. To load other names automatically, set `context.fileName` in `~/.gemini/settings.json`, for example `["AGENTS.md","GEMINI.md"]`. Each name is also looked up in `~/.gemini/`.
 - A repo's `.gemini/agents/<name>.md` with the same `name` takes precedence over the user-level agent (trusted folders only, after you acknowledge the agent). [registry.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/registry.ts)
+- A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
 - `agents.overrides.<name>` in settings can disable or tune one agent.
