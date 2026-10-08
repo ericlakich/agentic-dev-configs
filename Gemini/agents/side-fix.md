@@ -40,27 +40,26 @@ Ticket ID, issue description, parent ticket it was found under, base branch, abs
 3. **Orient.** Read the affected code, its callers, and its tests. Find the repo's real gates in CI config and build files.
 4. **Reproduce.** Write or extend a test that fails for the right reason before fixing.
 5. **Fix.** Smallest change that resolves the ticket. Small conventional commits.
-6. **Verify.** Run the gates yourself so the orchestrator gets a first signal, then stop and return `Status: done after <n> passes: ready for verify` with your worktree path, branch, and HEAD SHA. Do not push. The orchestrator runs the verify loop: each round, a fresh `reviewer` and a `verifier` against your worktree; it re-spawns you with any findings, then ships.
+6. **Verify.** You cannot spawn agents, so do not self-review and do not ship. Run the gates yourself so the orchestrator gets a first signal. Once the fix and its test are committed, stop with `Status: done after <n> passes: ready for verify`, with your worktree path, branch, and HEAD SHA. Do not push. The orchestrator runs the verify loop (a fresh `reviewer` and a `verifier` against your worktree each round) and ships. When it re-spawns you with findings, treat each finding ID as an exit-test item: fix, commit, report each as closed or not closed, and stop at ready for verify again.
 7. **Ship.** The orchestrator ships per B2 after verify passes (push, PR, ticket state, links). You do not push or open the PR.
 
 ## Loop
 Contract per GEMINI.md B4: the orchestrator's outer loop, scaled down to orient, reproduce, fix, and a first run of the gates. The orchestrator runs your verify loop and ships (B3). Same exit states, budgets, and stall rules.
-- Exit test: the fix committed on the ticket's branch in the worktree; the reproducing test fails before the fix and passes after; the gates you ran pass on HEAD. On a re-spawn, also every finding in the brief closed or reported not closed, with evidence.
+- Exit test: the fix committed on the ticket's branch in the worktree; the reproducing test fails before the fix and passes after; the gates you ran pass on HEAD. On a re-spawn, every finding in the brief is closed; report each as closed or not closed, with evidence.
 - `done` means ready for verify: the first line reads `Status: done after <n> passes: ready for verify`.
-- Verify budget (the orchestrator's): at most 3 fix rounds after the first verify, with a fresh `reviewer` every round.
-- Stall: a finding still open after its fix, or a gate failing the same way twice. Stop with `partial`.
+- Verify budget (the orchestrator's): at most 3 fix rounds after the first verify, with a fresh `reviewer` every round. The count does not reset.
+- Stall: a finding still open after its fix, or a gate failing the same way after its fix. Stop with `partial`.
 - `blocked` and `needs-input` go back to the orchestrator. You never ask the user.
 
 ## Report format
 ```
-Status: <done|partial|blocked|needs-input> after <n> passes: <ready for verify, or one-line reason>
-HEAD: <sha>
+Status: <done|partial|blocked|needs-input> after <n> passes: <one-line reason, or "ready for verify">
 Ticket: <TICKET-ID> (Project: ...) | Found under: <PARENT-ID>
 Branch: <TICKET-ID>/slug | PR: not opened (orchestrator ships after verify) | Base: <branch>
-Worktree: <path> (left in place; remove after merge with git worktree remove)
+Worktree: <path> @ <HEAD sha> (left in place; remove after merge with git worktree remove)
 What changed: 2 to 4 lines, behavior first
-Findings (re-spawns only): R<n>: closed | not closed. Evidence. Or none
-Verified: <gates you ran> -> <results>; independent review: pending (orchestrator)
+Findings: R<n> closed | not closed, ... (when re-spawned with them), or none
+Verified: <gates you ran> -> <results>
 Ordering: blocks main change yes/no (orchestrator records it in both PRs)
 Noticed, out of scope: ..., or none
 Open questions: ..., or none

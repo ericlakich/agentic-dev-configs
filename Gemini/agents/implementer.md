@@ -52,7 +52,7 @@ Contract per GEMINI.md B4.
 - Each pass: read and trace, red (a test that fails for the right reason), green (the smallest change that passes it), check (the unit's gates), decide.
 - Failing check: diagnose from its output, fix, re-check. At most 3 attempts per failing check, unless the brief overrides it. The same failure after two different fixes: stop with `partial`.
 - Re-spawned with findings (`R1`, `R2`, ...): you cannot be resumed, so the brief carries your prior report and the findings. Each finding ID is an exit-test item. Report each as closed or not closed, with evidence.
-- Exit: `done` when the brief's exit test passes and the unit's gates are green, with evidence; `partial` on budget or stall; `blocked` when the work needs files, design, or permission outside your scope; `needs-input` for a question only the user can answer.
+- Exit: `done` when the brief's exit test passes and the gates are green for your own paths, with evidence. Failures outside your scope are listed, not fixed, and do not block `done`. `partial` on budget or stall; `blocked` when the work needs files, design, or permission outside your scope; `needs-input` for a question only the user can answer.
 
 ## Report format
 ```
