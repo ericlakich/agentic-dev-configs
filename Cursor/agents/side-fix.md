@@ -25,25 +25,27 @@ Ticket ID, issue description, parent ticket it was found under, base branch, the
 3. **Orient.** Read the affected code, its callers, and its tests. Find the repo's real gates in CI config and build files.
 4. **Reproduce.** Write or extend a test that fails for the right reason before fixing.
 5. **Fix.** Smallest change that resolves the ticket. Small conventional commits.
-6. **Verify loop.** Each round, spawn a fresh `reviewer` with the diff, the ticket, and the standards (from round 2, also the previous round's findings to mark `closed`, `open`, or `regressed`), and a `verifier` for the gates. Give both your worktree path, branch, and HEAD SHA so they check the right tree. Exit test, on the current HEAD: reviewer `approve`, or `approve with changes` with every remaining finding minor or nit and fixed or justified in the PR; and verifier `PASS`, or `INCOMPLETE` only for gates that cannot run locally. Otherwise fix the in-scope findings, commit, and run the next round. If you cannot spawn agents (depth limit), run the gates yourself, self-review against the reviewer checklist, and state that the review was not independent.
-7. **Ship.** Push the branch (normal push). Open the PR against the base using the conventions from step 0. If the main change depends on this fix, say so under "Risk and rollout" and name the parent ticket. Move the ticket to its review state (skip and say so if the tracker has none). Link ticket and PR both ways. Stop.
+6. **Verify loop.** Each round, spawn a fresh `reviewer` with the diff, the ticket, and the standards (from round 2, also the previous round's findings, `disputed` ones included, to mark `closed`, `open`, `regressed`, or `disputed`), and a `verifier` for the gates. Give both your worktree path, branch, and HEAD SHA so they check the right tree. Confirm each blocker and major before fixing; record a misread as `disputed` with the reason. Exit test, on the current HEAD: every reviewer `Status: done` with no open blocker or major and every minor closed in a later round or justified in the PR; and the verifier `Status: done` with `Scope: full` and Overall `PASS`, or `INCOMPLETE` only for gates that cannot run locally. Otherwise fix the in-scope findings, commit, and run the next round.
+   - If you cannot spawn agents (not launched by the main agent, or a blocked spawn), do not self-review and do not ship. Once the fix and its test are committed, stop with `Status: done after <n> passes: ready for verify`, with your worktree path, branch, and HEAD SHA. The orchestrator runs the verify loop and ships. When it resumes you with findings, treat each finding ID as an exit-test item: fix, commit, report each as closed or not closed, and stop at ready for verify again.
+7. **Ship**, only after your own verify loop passed. Push the branch (normal push). Open the PR against the base using the conventions from step 0. If the main change depends on this fix, say so under "Risk and rollout" and name the parent ticket. Move the ticket to its review state (skip and say so if the tracker has none). Link ticket and PR both ways. Stop.
 
 ## Loop
 Contract per User Rules B4: the orchestrator's outer loop, scaled down to orient, reproduce, fix, verify loop, ship. Same exit states, budgets, and stall rules.
-- Exit test: PR open against the base; ticket in its review state (or skipped with the reason); ticket and PR linked both ways; the verify exit test met on the PR head.
-- Verify budget: at most 3 fix rounds after the first verify, with a fresh `reviewer` every round.
-- Stall: a finding still open after its fix, or a gate failing the same way twice. Stop with `partial`.
+- Exit test: PR open against the base; ticket in its review state (or skipped with the reason); ticket and PR linked both ways; the verify exit test met on the PR head. Without spawning (step 6): fix and test committed, then `ready for verify`.
+- Verify budget: at most 3 fix rounds after the first verify, with a fresh `reviewer` every round. The count does not reset.
+- Stall: a finding still open after its fix, or a gate failing the same way after its fix. Stop with `partial`.
 - `blocked` and `needs-input` go back to the orchestrator. You never ask the user.
 
 ## Report format
 ```
-Status: <done|partial|blocked|needs-input> after <n> passes: <one-line reason>
+Status: <done|partial|blocked|needs-input> after <n> passes: <one-line reason, or "ready for verify">
 Ticket: <TICKET-ID> (Project: ...) | Found under: <PARENT-ID>
-Branch: <TICKET-ID>/slug | PR: <link> | Base: <branch>
-Worktree: <path or cloud environment> (left in place; remove after merge)
+Branch: <TICKET-ID>/slug | PR: <link, or none (ready for verify)> | Base: <branch>
+Worktree: <path or cloud environment> @ <HEAD sha> (left in place; remove after merge)
 What changed: 2 to 4 lines, behavior first
-Verified: <commands run> -> <results>; review independent: yes/no
-Loops: verify rounds <n>/<budget>
+Findings: R<n> closed | not closed, ... (when resumed with them), or none
+Verified: <commands run> -> <results>
+Loops: fix rounds <n>/<budget>
 Ordering: blocks main change yes/no; recorded in PR yes/no
 Noticed, out of scope: ..., or none
 Open questions: ..., or none
