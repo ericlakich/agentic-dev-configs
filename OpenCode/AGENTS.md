@@ -19,7 +19,7 @@
 2. A project workflow skill that covers this repo (per the repo's docs or the skill's own description).
 3. This document.
 
-Also follow the repo's engineering standards (B1 says where they live) and any org-level standards this file or the repo's docs point to. If two sources conflict and the order above does not settle it (standards vs skill, a repo `AGENTS.md` (or `CLAUDE.md`) vs this document), ask: in the question batch, or after it park the conflict (B4, Autonomy). Do not pick silently.
+Also follow the repo's engineering standards (B1 says where they live) and any org-level standards this file or the repo's docs point to. If two sources conflict and the order above does not settle it (standards vs skill, a repo `AGENTS.md` (or `CLAUDE.md`) vs this document), ask: in the question batch, or, in development work after the batch, park the conflict (B4, Autonomy). Do not pick silently.
 
 ## Part B: Development workflow
 
@@ -48,9 +48,9 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
   - PR title: `<TICKET-ID>: <outcome-oriented summary>`.
   - PR description sections: Summary (behavior first), Ticket, Changes, Verification (commands -> results), Contract impact, Risk and rollout.
   - Ticket states: in-progress when work starts, review state when the PR opens. If the tracker has no such state, skip the move and say so.
-- Open the PR, move the ticket to its review state, and link ticket and PR both ways. Merge only the PRs I granted in the question batch (the whole stack, or the main PR only) or ask for later, and only once the verify exit test passed; otherwise stop at the open PR. No force-push or branch deletion unless I ask.
-- Stacking: when a session opens more than one PR into the same base (the main PR and side fixes), stack them in one chain. Order, bottom-up: side-fix PRs (B3) in the order they open, then the main PR; a draft always goes on top. The lowest PR targets the base. Each PR above it starts from, or merges in, the branch of the PR below it, and targets that branch. A PR that opens out of order is moved into place: the PR that belongs above it merges in its branch, re-runs its gates, pushes normally, and retargets onto it. Each PR names the PR below it under "Risk and rollout", updated whenever its target changes.
-- Merging a stack: bottom-up, with merge commits (`gh pr merge <n> --merge`, never `--delete-branch` unless I ask). After each merge, retarget the next PR to the base unless the host already did. If the repo allows only squash or rebase merges (Orient checks), first merge the updated base into the next PR's branch. B7 lists the chain in merge order.
+- Open the PR, move the ticket to its review state, and link ticket and PR both ways. Merge only when I granted it in the question batch (a grant covers the whole stack) or ask later, and only once the verify exit test passed; otherwise stop at the open PR. No force-push or branch deletion unless I ask.
+- Stacking: when a session opens more than one PR into the same base (the main PR and side fixes), stack them in one chain. Order, bottom-up: side-fix PRs (B3) in the order they open, then the main PR, which opens only after every side-fix has ended. Side PRs never ship as drafts; only the main PR can. The lowest PR targets the base. Each PR above it starts from, or merges in, the branch of the PR below it, and targets that branch. A PR that opens out of order is moved into place: the PR that belongs above it merges in its branch, re-runs its gates, pushes normally, and retargets onto it. Each PR names the PR below it under "Risk and rollout", updated whenever its target changes.
+- Merging a stack: bottom-up, with merge commits (`gh pr merge <n> --merge`, never `--delete-branch` unless I ask). After each merge, retarget the next PR to the base unless the host already did. If the repo allows only squash or rebase merges (Orient checks), merge nothing and leave the stack to me. B7 lists the chain in merge order.
 
 ### B3. Unrelated issues found mid-task
 - Do not fold them into the current branch. One ticket, one PR.
@@ -66,8 +66,8 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
   - If `git check-ignore -q .worktrees/` fails, first run `echo .worktrees/ >> "$(git rev-parse --git-path info/exclude)"` (local only; works when the main checkout is itself a linked worktree; never edit the repo's `.gitignore` for this).
   - The worktree stays until I remove it after merge (`git worktree remove .worktrees/<TICKET-ID>`).
   - For GitHub Issues the ID part is `issue-<n>` (branch `issue-<n>/<slug>`, worktree `.worktrees/issue-<n>`), matching B2.
-  - Verify and ship: side-fix cannot spawn agents (B9), so it stops at ready for verify; its report starts `Status: done after <n> passes: ready for verify`. Run its verify loop on its worktree (orchestrator Side loops): each round, a fresh `reviewer` and a `verifier`, each given the worktree path, branch, and HEAD SHA; at most 3 fix rounds (B4). Send findings back by resuming side-fix with its `task_id` (B4); it fixes them in the same worktree and returns ready for verify again. Once the verify exit test passes, stack it (B2): if the session has open side PRs into the same base, fetch, merge the top one's branch into its branch (`git -C <worktree> merge <remote>/<branch>`), and run a verifier on the new HEAD. Then push its branch (`git -C <worktree> push -u <remote> HEAD`), open the PR against that branch (or the base), move the ticket to its review state, and link ticket and PR both ways. If the main PR is already open, move it back on top (B2, orchestrator Side loops).
-- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch as soon as side-fix is done, before the next verify round. Record the ordering in both PRs under "Risk and rollout".
+  - Verify and ship: side-fix cannot spawn agents (B9), so it stops at ready for verify; its report starts `Status: done after <n> passes: ready for verify`. Run its verify loop on its worktree (orchestrator Side loops): each round, a fresh `reviewer` and a `verifier`, each given the worktree path, branch, and HEAD SHA; at most 3 fix rounds (B4). Send findings back by resuming side-fix with its `task_id` (B4); it fixes them in the same worktree and returns ready for verify again. If the loop ends on budget or stall, park it with no PR (side PRs never ship as drafts). Once the verify exit test passes, stack it (B2): if the session has open side PRs into the same base, fetch, merge the top one's branch into its branch (`git -C <worktree> merge <remote>/<branch>`), and run a verifier on the new HEAD; a conflict goes back to side-fix by resume, and it resolves it inside its ticket's scope. Then push its branch (`git -C <worktree> push -u <remote> HEAD`), open the PR against that branch (or the base), move the ticket to its review state, and link ticket and PR both ways.
+- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch once its PR is open, at the next clean-tree point before the next verify round. Record the ordering in both PRs under "Risk and rollout".
 - Committed secrets: stop and flag immediately. That is a rotation, not a cleanup.
 - Report every side ticket and PR in the final summary (B7).
 
@@ -136,7 +136,7 @@ Project: ... | Branch: <branch> | PR: <link> | Base: <branch the stack merges in
 | 1 | <link>: <title> | <branch> | <base> | none | ready, merged, or draft (why) |
 | 2 | <link>: <title> | <branch> | <branch of 1> | 1 | ... |
 
-Merge in row order with merge commits. After each merge, retarget the next PR to <base>.
+Merge in row order with merge commits. After each merge, retarget the next PR to <base>. In a squash- or rebase-only repo, first merge the updated base into each next PR's branch.
 
 ### Findings
 - Review findings fixed, justified, or disputed: one line each, with the reason
@@ -149,7 +149,7 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 - What to do next or differently, most important first
 
 ### Follow-ups
-- Work left: side tickets still in progress (worktree path and branch), parked units, cleanup such as worktrees to remove
+- Work left: parked side tickets (worktree path and branch), parked units, cleanup such as worktrees to remove
 
 ### Open questions
 - Each parked question with its options and a recommendation, or none
