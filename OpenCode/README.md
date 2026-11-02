@@ -129,6 +129,8 @@ Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped t
 
 The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 asks in the question batch.
 
+Model choice (B9) falls back to configured models here. The `task` tool takes no model argument: a subagent runs on the `model` in its agent file (`provider/model-id`) or, when that is omitted, on the calling agent's model, and a resume by `task_id` recomputes the model the same way. These files omit `model`, so every worker runs on the orchestrator's model. To run a worker on a cheaper or stronger model, set `model` in a personal or repo override of that agent. ([source][src]: `tool/task.ts:43-62`, `tool/task.ts:136`, `tool/task.ts:181-209`; [agents](https://opencode.ai/docs/agents/))
+
 Loop budgets (B4) are enforced by instructions only. OpenCode's `steps` agent field is an optional hard cap on an agent's agentic iterations, after which it must answer in text; these files do not set it. ([source][src]: `packages/core/src/v1/config/agent.ts:34-37`)
 
 ## Differences from Claude
@@ -149,7 +151,7 @@ Loop budgets (B4) are enforced by instructions only. OpenCode's `steps` agent fi
 | Background | `background: true` in frontmatter | Per call, `task` with `background: true`; needs `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` |
 | Worktree isolation | `isolation: worktree` | Not documented; the orchestrator creates `.worktrees/<TICKET-ID>` before spawning `side-fix` (B3) |
 | Nested subagents | side-fix spawns `reviewer` and `verifier` | None: `subagent_depth` defaults to 1, and every worker has `task: deny`. side-fix stops at ready for verify; the orchestrator runs its verify loop, stacks its branch, and ships its PR (B3) |
-| Model selection | `model: inherit` | `model` omitted, so subagents use the caller's model |
+| Model selection | `model: inherit`; the orchestrator picks per spawn with the Agent tool's `model` parameter (B9) | `model` omitted, so subagents use the caller's model; no per-spawn choice (B9) |
 
 ## Known gaps
 
