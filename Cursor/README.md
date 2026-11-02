@@ -101,7 +101,7 @@ verify      reviewer          fresh every round; findings R1, R2, ... marked clo
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
 ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
-report      orchestrator      B7: short sections, each under 250 words, with a merge-order table for stacks
+report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table
 
 side issue  side-fix          own ticket, branch, isolated copy, and PR; scaled-down loop, 3 fix rounds, background
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
@@ -109,11 +109,13 @@ side issue  side-fix          own ticket, branch, isolated copy, and PR; scaled-
 
 Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units and their agent IDs, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
 
-You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
+You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom, the main PR above them, and a draft always on top. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
+
+The question batch covers workflow permissions (merge, deploys, new dependencies). Cursor's own tool approvals are separate: a run still pauses on any terminal command or MCP tool call your Run Mode does not allow. For an unattended run in the IDE, use the Allowlist or Auto-review Run Mode (Settings > Agents > Approvals & Execution) and allowlist the commands the workflow uses (`git`, `gh`, your tracker's MCP tools). In the CLI, add them to `permissions.allow` in `~/.cursor/cli-config.json`, for example `Shell(git)`, `Shell(gh)`, and `Mcp(<server>:*)`. Keep the B6 rails. ([run modes](https://cursor.com/docs/agent/security/run-modes), [CLI permissions](https://cursor.com/docs/cli/reference/permissions))
 
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
 
-The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 stops and asks.
+The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 asks in the question batch.
 
 ## Differences from Claude
 
@@ -150,11 +152,12 @@ Hooks are not part of this port. Cursor reads hooks from `~/.cursor/hooks.json`.
 - Unverified: whether User Rules apply in the CLI (`agent`). The CLI reads `AGENTS.md` and `CLAUDE.md` at the project root and `.cursor/rules`. If User Rules do not apply there, the CLI main agent never sees Part C. ([CLI](https://cursor.com/docs/cli/using))
 - Unverified: whether Cursor reads `~/.claude/CLAUDE.md`. ([rules](https://cursor.com/docs/context/rules))
 - Unverified: whether subagents receive User Rules. The agents cite rules by number (B4, B5, B6), and those references only resolve if User Rules reach the subagent. If they do, workers also see Part C; B0 tells them to ignore it. ([subagents](https://cursor.com/docs/context/subagents))
+- Unverified: whether a CLI `permissions.allow` entry suppresses the approval prompt for a shell command or MCP tool. The docs give the format but say so only for web fetch. Test it before an unattended CLI run. ([CLI permissions](https://cursor.com/docs/cli/reference/permissions))
 - Unverified: whether `readonly` blocks test runs. `reviewer` may run an existing test to confirm a defect; if `readonly` blocks it, the reviewer describes the test instead. ([subagents](https://cursor.com/docs/context/subagents))
 
 ## Per-repo overrides
 
-- Repo rules add project rules on top of these User Rules: `.cursor/rules/*.mdc` (frontmatter `description`, `globs`, `alwaysApply`) and `AGENTS.md` at the root and in subdirectories; the CLI applies a root `CLAUDE.md` as a rule. Cursor ranks Team > Project > User. If a repo rule conflicts with these User Rules and the A3 order doesn't settle it, the agent stops and asks.
+- Repo rules add project rules on top of these User Rules: `.cursor/rules/*.mdc` (frontmatter `description`, `globs`, `alwaysApply`) and `AGENTS.md` at the root and in subdirectories; the CLI applies a root `CLAUDE.md` as a rule. Cursor ranks Team > Project > User. If a repo rule conflicts with these User Rules and the A3 order doesn't settle it, the agent asks in the question batch, or parks the conflict after it.
 - A repo can add agents in `.cursor/agents/` (Cursor also reads `.claude/agents/` and `.codex/agents/`; the `.cursor/` file wins on a name clash). Project agents take precedence on a name clash, so a repo's `.cursor/agents/`, `.claude/agents/`, or `.codex/agents/` agent with the same `name` replaces the user-level one, including this port's `side-fix`. ([subagents](https://cursor.com/docs/context/subagents))
 - A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
 - Worktree setup commands for a repo go in `.cursor/worktrees.json`. The CLI's `-w/--worktree [name]` creates `~/.cursor/worktrees/<repo>/<name>`. ([worktrees](https://cursor.com/docs/configuration/worktrees))
