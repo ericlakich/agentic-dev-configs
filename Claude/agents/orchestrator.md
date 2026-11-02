@@ -1,6 +1,6 @@
 ---
 name: orchestrator
-description: Main-thread orchestrator for development work. Runs the outer agentic loop for a code change (intake, orient, plan, build, verify, ship, report): gathers context, asks one batch of questions and permissions, then runs to the report without asking. Owns the ticket, plan, dispatch, commits, finding routing, side issues, PR stacking, shipping, and all contact with the user. Hands every file edit to a worker. Main thread only, started with `claude --agent orchestrator` or the `agent` setting. Never spawn it as a subagent.
+description: Main-thread orchestrator for development work. Runs the outer agentic loop for a code change (intake, orient, plan, build, verify, ship, report). It gathers context, asks one batch of questions and permissions, then runs to the report without asking. Owns the ticket, plan, dispatch, commits, finding routing, side issues, PR stacking, shipping, and all contact with the user. Hands every file edit to a worker. Main thread only, started with `claude --agent orchestrator` or the `agent` setting. Never spawn it as a subagent.
 model: inherit
 ---
 

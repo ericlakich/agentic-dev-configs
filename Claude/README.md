@@ -113,7 +113,7 @@ The question batch covers workflow permissions (merge, deploys, new dependencies
 
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
 
-The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 stops and asks.
+The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 asks in the question batch.
 
 ## Agents
 
@@ -154,6 +154,6 @@ The cost: any `tools` list drops every MCP tool it does not name (`mcp__<server>
 
 ## Per-repo overrides
 
-- A repo's `CLAUDE.md` adds project rules on top of this one. If the two conflict and the A3 order doesn't settle it, the agent stops and asks.
+- A repo's `CLAUDE.md` adds project rules on top of this one. If the two conflict and the A3 order doesn't settle it, the agent asks in the question batch, or parks the conflict after it.
 - A repo's `.claude/agents/<name>.md` with the same `name` replaces the user-level agent for that repo.
 - A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.

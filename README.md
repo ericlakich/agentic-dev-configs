@@ -44,7 +44,7 @@ The global instructions file has two parts.
 
 Hard rails hold for every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, and no production changes without an explicit go-ahead.
 
-The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 stops and asks.
+The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 asks in the question batch.
 
 ## Skills
 
