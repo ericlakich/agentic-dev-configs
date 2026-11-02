@@ -73,6 +73,7 @@ Section numbers, rules, agent roles, loop contracts, and report formats match ac
 | Orchestrator form | Main-thread agent (`claude --agent orchestrator`) | Part C of the global file | Part C of the global file | Part C of the global file | Agent file (`copilot --agent orchestrator`) | `mode: primary` agent (`opencode --agent orchestrator`) |
 | Hard spawn allowlist on the orchestrator | Opt-in, orchestrator only: `tools` line; drops unlisted MCP tools | No (instructions only) | No (instructions only) | Opt-in, session-wide: `agents.overrides.<name>.enabled: false` | Opt-in, session-wide: `subagents.disabledSubagents` | Yes (`permission.task`) |
 | Resume a worker with its context | Yes (`SendMessage`) | Yes (V1 `send_input`, V2 `followup_task`) | Yes (agent ID) | No (re-spawn) | Finished worker: not documented, re-spawn; `write_agent` messages a running one | Yes (`task_id`) |
+| Pick a subagent's model per spawn | Yes (Agent tool `model`) | Yes (`spawn_agent` `model`, an exact slug; a role file's `model` wins) | Partly: the parent can name a model at launch (parameter and precedence unverified) | No (agent file or `agents.overrides`) | No (agent file or `/subagents`) | No (agent file, else the caller's model) |
 
 Five fallbacks cover the gaps:
 
