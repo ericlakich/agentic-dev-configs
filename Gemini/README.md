@@ -150,6 +150,8 @@ Per-agent frontmatter. "Read set" is `read_file`, `read_many_files`, `grep_searc
 
 The defaults are 30 turns and 10 minutes. Full test suites and whole tickets outrun them, so implementer, verifier, and side-fix get more. The implementer and side-fix lists are explicit so they exclude `ask_user`: subagents return `needs-input` to the orchestrator (B0). Both keep `activate_skill` and `mcp_*`, so they can load a workflow skill and reach the tracker and git host, as in Claude.
 
+Model choice (B9) falls back to configured models. `invoke_agent` takes only `agent_name` and `prompt`, so the orchestrator cannot pick a model per spawn, and every agent here runs on the main session's model (`model` omitted means `inherit`). To put one agent on a cheaper tier, set `model` in its agent file, or `modelConfig.model` under `agents.overrides.<name>` in `~/.gemini/settings.json`; that applies to every spawn of that agent. [agent-tool.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/agent-tool.ts#L59-L72), [Subagents](https://geminicli.com/docs/core/subagents/)
+
 Back-to-back subagent calls in one turn run in parallel, so B4's parallel build units work as in Claude. [scheduler.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/scheduler/scheduler.ts)
 
 ## Known gaps
