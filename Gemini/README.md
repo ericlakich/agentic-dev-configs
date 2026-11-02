@@ -103,17 +103,17 @@ verify      reviewer          fresh every round; findings R1, R2, ... marked clo
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
 ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
-report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table
+report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, and worktree; scaled-down loop to ready for verify; foreground
             orchestrator      side-fix's verify loop (3 fix rounds, fresh reviewer each), then its PR
 ```
 
-Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions; it has no worker IDs, because workers cannot be resumed. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions; it has no worker IDs, because workers cannot be resumed. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
 
 A worker cannot be resumed, so a fix pass re-spawns it with its prior report and the findings in the brief (B4).
 
-You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom, the main PR above them, and a draft always on top. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first. The orchestrator ships side-fix's PR too, so it stacks that PR onto the top side PR when it opens it.
+You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom and the main PR on top, opened only after every side-fix has ended. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first. The orchestrator ships side-fix's PR too, so it stacks that PR onto the top side PR when it opens it.
 
 The question batch covers workflow permissions (merge, deploys, new dependencies). Gemini CLI's own tool approvals are separate: in the default approval mode a run still pauses for confirmation on tool calls you have not allowed. For an unattended run, allow the commands the workflow uses in `~/.gemini/settings.json` (`"tools": {"allowed": ["run_shell_command(git)", "run_shell_command(gh)"]}`) and mark your tracker's MCP server `"trust": true` under `mcpServers`, rather than `--approval-mode=yolo`, and keep the B6 rails. [Configuration](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md)
 
