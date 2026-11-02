@@ -99,15 +99,15 @@ verify      reviewer          fresh every round; findings R1, R2, ... marked clo
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
 ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
-report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table
+report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, worktree, and PR; scaled-down loop, 3 fix rounds, background
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
-Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
 
-You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom, the main PR above them, and a draft always on top. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
+You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom and the main PR on top, opened only after every side-fix has ended. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
 
 The question batch covers workflow permissions (merge, deploys, new dependencies). Claude Code's own tool-permission prompts are separate: a run still pauses on any command or MCP tool your settings do not allow. For an unattended run, allow the commands the workflow uses (`git`, `gh`, your tracker's MCP tools) in `permissions.allow`, and keep the B6 rails.
 
