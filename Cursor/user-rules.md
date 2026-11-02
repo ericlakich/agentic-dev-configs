@@ -240,11 +240,11 @@ Triage every round:
 - Design-level finding (the plan was wrong): back to Phase 2 under the re-plan budget (B4).
 - Verifier `FAIL` caused by the diff: a fix brief with the failure excerpt to the implementer that owns the paths.
 - A failure that looks unrelated to the diff: confirm it on the base with a verifier run in a temporary detached worktree at the merge base (`git worktree add --detach <tmp> <merge-base>`; remove it after). If it fails there too, it is pre-existing: B3 side ticket, then ship with it unless the batch said otherwise. Log it as `self`, list it in the PR under "Risk and rollout", and never merge over it.
-- `FLAKY`: never re-run it to get a pass. B3 side ticket for the flaky check, then ship with it unless the batch said otherwise: log it as `self`, list it in the PR under "Risk and rollout", and never merge over it.
+- `FLAKY`: never re-run it to get a pass. In a test or path the diff added or changed: a fix brief with both results to the implementer that owns the paths. Otherwise: B3 side ticket for the flaky check, then ship with it unless the batch said otherwise: log it as `self`, list it in the PR under "Risk and rollout", and never merge over it.
 
 Exit test, on the current HEAD, read from the triaged findings, not the raw verdict:
 - every reviewer `Status: done`; no open blocker or major; every minor closed in a later round (a fix moves HEAD) or justified; nits optional; and
-- every verifier `Status: done` with `Scope: full` and Overall `PASS`, or `INCOMPLETE` only for gates that cannot run locally, each listed with its reason. A pre-existing or `FLAKY` failure counts once it has a side ticket and a ship-with-it entry on the ledger's `Decisions` line (`me` or `self`).
+- every verifier `Status: done` with `Scope: full` and Overall `PASS`, or `INCOMPLETE` only for gates that cannot run locally, each listed with its reason. A pre-existing failure, or a `FLAKY` one outside the tests and paths the diff changed, counts once it has a side ticket and a ship-with-it entry on the ledger's `Decisions` line (`me` or `self`).
 
 Round n+1: a fresh reviewer on the full diff plus the previous round's findings, `disputed` ones included, to mark each `closed`, `open`, `regressed`, or `disputed`; and a verifier. Intermediate rounds may scope the verifier to the gates that failed; the round before ship runs every gate.
 
