@@ -5,7 +5,7 @@
 ### A1. No guessing
 - Never fill a gap with a silent assumption. Missing fact, path, ID, value, or requirement: ask, in the batch below.
 - Gather context first, then ask everything in one batch, early: every question and every permission the work will need through completion. Do not drip questions mid-task.
-- Only ask when the answer changes what you produce. Otherwise proceed.
+- Only ask when the answer changes what you produce. Otherwise proceed. A question I leave unanswered in the batch takes the default you proposed, which counts as my approval; a permission I leave unanswered is not granted.
 - Development work, once that batch is answered: no more questions. A gap found later is decided and logged, or parked for the final report (B4, Autonomy).
 - Separate what you verified from what you inferred, and say which is which.
 
@@ -55,7 +55,7 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
 ### B3. Unrelated issues found mid-task
 - Do not fold them into the current branch. One ticket, one PR.
 - Create a ticket for the issue without asking (B2 rules), note which ticket you found it under, then spawn the `side-fix` subagent to handle it end to end in its own scaled-down loop (B4): its own `<TICKET-ID>/<slug>` branch from the correct base, fix, gates, PR. If it cannot spawn agents, it stops at ready for verify, and the orchestrator runs its verify loop and ships it (orchestrator Side loops). It runs in the background in a separate git worktree, so it never touches the main branch's working tree. Pass it the repo's B2 conventions in the brief.
-- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch once its PR is open, at the next clean-tree point before the next verify round. Record the ordering in both PRs under "Risk and rollout".
+- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch once its PR is open, at the first point with no unit in flight and a clean tree. Units that need it, and the next verify round, wait for that merge. Record the ordering in both PRs under "Risk and rollout".
 - Committed secrets: stop and flag immediately. That is a rotation, not a cleanup.
 - Report every side ticket and PR in the final summary (B7).
 
@@ -75,7 +75,7 @@ A loop gathers context, acts, checks against ground truth, and decides, until an
   - Re-plan: once per ticket. A second re-plan, or any re-plan that changes scope or a public contract, is parked (Autonomy).
 - **Stall rule.** Stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence (no new finding, no diff change, no new information). Never repeat an identical action expecting a different result. In the verify loop the stricter Phase 4 rule wins: a finding still open after its fix, or a gate failing the same way after its fix, stops it.
 - **Flaky.** A check that changes result with no code change is flaky. Re-run it once to confirm, then report it as flaky. Never loop on it, and never count a flaky pass as a pass.
-- **Autonomy.** The orchestrator asks me things once: the question batch in Plan, after Orient has gathered the context. The batch holds every question, every permission the work will need through completion (merge, and for which PRs; other B2 and B6 gated actions; new dependencies; anything outward-facing beyond opening PRs), and the forks it expects mid-build, each with the option it will take unless I say otherwise. Once I answer, it runs to the report without asking. A gap found later, including a worker's `needs-input`:
+- **Autonomy.** The orchestrator asks me things once: the question batch in Plan, after Orient has gathered the context. The batch holds every question, every permission the work will need through completion (merge, which covers the whole stack; other B2 and B6 gated actions; new dependencies; anything outward-facing beyond opening PRs), and the forks it expects mid-build, each with the option it will take unless I say otherwise. Once I answer, it runs to the report without asking. A gap found later, including a worker's `needs-input`:
   - Safe option exists (reversible, inside the approved scope, no contract or security change): take the safest one, log it on the ledger's `Decisions` line as `self`, and continue.
   - No safe option (irreversible, outward-facing beyond what I approved, a scope or public-contract change, a security call, a standards conflict (A3), a second re-plan), or a loop that ends on budget or stall: park the affected units and anything that depends on them, finish everything else, and raise the question in the report with options and a recommendation. When parking keeps the main PR from its exit test, ship it as a draft with the parked items under "Risk and rollout".
   - A gated action (B2, B6) the batch did not grant is never taken. Park it.
