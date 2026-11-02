@@ -19,7 +19,7 @@
 2. A project workflow skill that covers this repo (per the repo's docs or the skill's own description).
 3. This document.
 
-Also follow the repo's engineering standards (B1 says where they live) and any org-level standards this file or the repo's docs point to. If two sources conflict and the order above does not settle it (standards vs skill, a repo `GEMINI.md` or `AGENTS.md` vs this document), stop and ask. Do not pick silently.
+Also follow the repo's engineering standards (B1 says where they live) and any org-level standards this file or the repo's docs point to. If two sources conflict and the order above does not settle it (standards vs skill, a repo `GEMINI.md` or `AGENTS.md` vs this document), ask: in the question batch, or after it park the conflict (B4, Autonomy). Do not pick silently.
 
 ## Part B: Development workflow
 
@@ -38,7 +38,7 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
 
 ### B2. Ticket, branch, PR
 - Every code change needs a ticket in the repo's tracker (Linear, Jira, GitHub Issues, or whatever the repo uses), including one-line fixes.
-- Identify the tracker and owning team from the workflow skill or repo docs. If undocumented, infer from recent branch names and PR titles, and confirm the inference in the A1 batch before creating anything. No tool access to that tracker: stop and ask. Never fabricate an ID.
+- Identify the tracker and owning team from the workflow skill or repo docs. If undocumented, infer from recent branch names and PR titles, and confirm the inference in the A1 batch before creating anything. No tool access to that tracker: ask in the question batch. Never fabricate an ID.
 - Search the owning team's tickets first. One clear match: use it and say which. Several plausible matches: ask which. No match: create one. Never ask permission to create.
 - New tickets: outcome-oriented title; description covering the problem, the intended change, and how it will be verified; assigned to me; placed in the best-fit grouping (Linear project, Jira epic, GitHub milestone, or the tracker's equivalent). List the options, pick by scope match, and name the pick. If nothing fits, leave the grouping empty and say so.
 - Branch: `<TICKET-ID>/<short-slug>`, lowercase kebab-case slug, 3 to 6 words. Example: `ABC-123/fix-login-redirect`. If the repo documents its own branch convention, it wins.
@@ -48,9 +48,9 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
   - PR title: `<TICKET-ID>: <outcome-oriented summary>`.
   - PR description sections: Summary (behavior first), Ticket, Changes, Verification (commands -> results), Contract impact, Risk and rollout.
   - Ticket states: in-progress when work starts, review state when the PR opens. If the tracker has no such state, skip the move and say so.
-- Open the PR, move the ticket to its review state, and link ticket and PR both ways. Merge only when I granted it in the question batch or ask later, and only once the verify exit test passed; otherwise stop at the open PR. No force-push or branch deletion unless I ask.
-- Stacking: when a session opens more than one PR into the same base (split work, side fixes), stack them in one chain. The first PR targets the base. Each later PR's branch starts from, or merges in, the branch of the PR below it, and targets that branch. A hard prerequisite (B3) goes lowest. Each PR names the PRs below and above it under "Risk and rollout".
-- Merging a stack: bottom-up, with merge commits. After each merge, retarget the next PR to the base unless the host already did. A squash or rebase merge forces a rebase and force-push of every PR above it, so use one only when I ask. B7 lists the chain in merge order.
+- Open the PR, move the ticket to its review state, and link ticket and PR both ways. Merge only the PRs I granted in the question batch (the whole stack, or the main PR only) or ask for later, and only once the verify exit test passed; otherwise stop at the open PR. No force-push or branch deletion unless I ask.
+- Stacking: when a session opens more than one PR into the same base (the main PR and side fixes), stack them in one chain. Order, bottom-up: side-fix PRs (B3) in the order they open, then the main PR; a draft always goes on top. The lowest PR targets the base. Each PR above it starts from, or merges in, the branch of the PR below it, and targets that branch. A PR that opens out of order is moved into place: the PR that belongs above it merges in its branch, re-runs its gates, pushes normally, and retargets onto it. Each PR names the PR below it under "Risk and rollout", updated whenever its target changes.
+- Merging a stack: bottom-up, with merge commits (`gh pr merge <n> --merge`, never `--delete-branch` unless I ask). After each merge, retarget the next PR to the base unless the host already did. If the repo allows only squash or rebase merges (Orient checks), first merge the updated base into the next PR's branch. B7 lists the chain in merge order.
 
 ### B3. Unrelated issues found mid-task
 - Do not fold them into the current branch. One ticket, one PR.
@@ -64,8 +64,8 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
     ```
     `<remote>` is the remote that hosts the base (usually `origin`). The last command prints the worktree's absolute path and its HEAD, which is the base SHA, for the brief. Run the block as one shell command, because some tools start a fresh shell for each call. `--no-track` keeps the new branch from tracking the base, so a later push cannot land on the base branch. If `git check-ignore -q .worktrees/` fails, first run `echo .worktrees/ >> "$(git rev-parse --git-path info/exclude)"` (local only; works when the main checkout is itself a linked worktree; never edit the repo's `.gitignore` for this). For GitHub Issues the ID part is `issue-<n>` (branch `issue-<n>/<slug>`, worktree `.worktrees/issue-<n>`). The worktree stays until I remove it after merge (`git worktree remove .worktrees/<TICKET-ID>`). Gemini's read tools skip git-ignored paths, so inside `.worktrees/` read with `run_shell_command` (`cat`, `rg`, `git show`); `write_file` and `replace` work there. Say so in the side-fix, reviewer, and verifier briefs.
   - Foreground: side-fix runs in the foreground, so the main task pauses until it returns.
-  - Verify and ship: side-fix cannot spawn agents and stops at ready for verify; its report starts `Status: done after <n> passes: ready for verify`. Run its verify loop (B4): each round, a fresh `reviewer` and a `verifier` on its worktree, at most 3 fix rounds. Findings go back by re-spawning side-fix in the same worktree with its prior report and the findings (B4), then the next round. When the verify exit test passes, stack it (B2): side-fix's branch starts from the base, so if the session has an open PR into the same base, merge the top one's branch into it (`git -C <worktree> merge <remote>/<branch>`) and re-run the `verifier` on the new HEAD; a merge conflict or a failing gate goes back to side-fix by re-spawn. Then push its branch (`git -C <worktree> push -u <remote> HEAD`), open the PR against that branch (or the base when there is none), move the ticket to its review state, and link ticket and PR both ways.
-- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: its PR goes lowest in the stack, and the main branch stacks on it (B2). Record the ordering in both PRs under "Risk and rollout".
+  - Verify and ship: side-fix cannot spawn agents and stops at ready for verify; its report starts `Status: done after <n> passes: ready for verify`. Run its verify loop (B4): each round, a fresh `reviewer` and a `verifier` on its worktree, at most 3 fix rounds. Findings go back by re-spawning side-fix in the same worktree with its prior report and the findings (B4), then the next round. When the verify exit test passes, stack it (B2). side-fix's branch starts from the base, so if the session has open side PRs into the same base, fetch and merge the top one's branch into it (`git -C <worktree> merge <remote>/<branch>`): the brief's `Stack onto`, or a newer top. A conflict goes back to side-fix by re-spawn for a conflict pass, which counts as one of its 3 fix rounds (a conflict fix is a fix). Then run a `verifier` on the new HEAD, plus a fresh `reviewer` when the merge needed a conflict fix, and route what they find as in its verify loop. Then push its branch (`git -C <worktree> push -u <remote> HEAD`), open the PR against that branch (or the base when there is none), move the ticket to its review state, and link ticket and PR both ways.
+- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch as soon as side-fix is done, before the next verify round. Record the ordering in both PRs under "Risk and rollout".
 - Committed secrets: stop and flag immediately. That is a rotation, not a cleanup.
 - Report every side ticket and PR in the final summary (B7).
 
@@ -85,16 +85,16 @@ A loop gathers context, acts, checks against ground truth, and decides, until an
   - Re-plan: once per ticket. A second re-plan, or any re-plan that changes scope or a public contract, is parked (Autonomy).
 - **Stall rule.** Stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence (no new finding, no diff change, no new information). Never repeat an identical action expecting a different result. In the verify loop the stricter Phase 4 rule wins: a finding still open after its fix, or a gate failing the same way after its fix, stops it.
 - **Flaky.** A check that changes result with no code change is flaky. Re-run it once to confirm, then report it as flaky. Never loop on it, and never count a flaky pass as a pass.
-- **Autonomy.** The orchestrator asks me things once: the question batch in Plan, after Orient has gathered the context. The batch holds every question, every permission the work will need through completion (B2 and B6 gated actions, new dependencies, anything outward-facing beyond opening PRs), and the forks it expects mid-build, each with the option it will take unless I say otherwise. Once I answer, it runs to the report without asking. A gap found later, including a worker's `needs-input`:
+- **Autonomy.** The orchestrator asks me things once: the question batch in Plan, after Orient has gathered the context. The batch holds every question, every permission the work will need through completion (merge, and for which PRs; other B2 and B6 gated actions; new dependencies; anything outward-facing beyond opening PRs), and the forks it expects mid-build, each with the option it will take unless I say otherwise. Once I answer, it runs to the report without asking. A gap found later, including a worker's `needs-input`:
   - Safe option exists (reversible, inside the approved scope, no contract or security change): take the safest one, log it on the ledger's `Decisions` line as `self`, and continue.
-  - No safe option (irreversible, outward-facing beyond what I approved, a scope or public-contract change, a security call, a standards conflict (A3), a second re-plan), or a loop that ends on budget or stall: park the affected units and anything that depends on them, finish everything else, and raise the question in the report with options and a recommendation.
+  - No safe option (irreversible, outward-facing beyond what I approved, a scope or public-contract change, a security call, a standards conflict (A3), a second re-plan), or a loop that ends on budget or stall: park the affected units and anything that depends on them, finish everything else, and raise the question in the report with options and a recommendation. When parking keeps the main PR from its exit test, ship it as a draft with the parked items under "Risk and rollout".
   - A gated action (B2, B6) the batch did not grant is never taken. Park it.
-  - The one interrupt: a committed secret (B3). Tell me at once.
+  - The one interrupt: a committed secret (B3). Tell me at once, push nothing until I answer, and keep going on units that do not touch it.
 - **Resume vs fresh.** A worker cannot be resumed: `invoke_agent` takes only an agent name and a prompt, and every call starts a fresh executor. In place of a resume, for the same worker's own unit (a fix pass, a narrowed goal, integration feedback), re-spawn it with its prior report and the findings in the brief. Spawn fresh, without its prior report, when independence matters (every reviewer round) or when the worker stalled (its context is polluted; that spawn is the one re-brief).
 - **Outer loop.** The orchestrator runs these phases; Part C holds each phase's exit test, decision rules, and back-edges.
   0. Intake: not a code change -> answer under Part A; a PR review -> the `pr-review` skill; a code change -> the loop.
   1. Orient: gather context before asking anything. `explorer`s map the code; tracker and candidate tickets (B2), workflow skill, standards, and real gates (B1).
-  2. Plan: units with disjoint file scopes, each with an exit test and gates; the one question batch (Autonomy); then the ticket resolved (B2) and its branch. From here on, no questions until the report.
+  2. Plan: units with disjoint file scopes, each with an exit test and gates; the one question batch (Autonomy); then the ticket resolved (B2) and its branch. From here on, no questions until the report; a re-plan skips the batch (Autonomy).
   3. Build: one `implementer` per unit; the orchestrator reads each diff and commits it.
   4. Verify: a fresh `reviewer` and a `verifier` each round; findings return as fix briefs.
   5. Ship: per B2, stacked when there is more than one PR; merged only if granted.
@@ -115,11 +115,11 @@ A loop gathers context, acts, checks against ground truth, and decides, until an
 - Never fabricate ticket IDs, file paths, API shapes, env values, or command output. Read it or ask.
 
 ### B7. Final report
-The session's last message, written to be scanned. Use these sections in this order: bullets, one point each, the point first. Keep each section under 250 words where possible. Link to the PR, ticket, or file for detail; never paste logs, worker reports, or the ledger. Skip a section with nothing in it, except Open questions.
+The session's last message, written to be scanned. Use these sections in this order. Write bullets, one point each, the point first. Keep each section under 250 words where possible. Link to the PR, ticket, or file for detail; never paste logs, worker reports, or the ledger. Skip a section with nothing in it, except Open questions.
 
 ```
 ## <TICKET-ID>: <one-line outcome>
-Project: ... | Branch: <branch> | PR: <link> | Base: <branch> | Status: ready for review, merged, or draft (why)
+Project: ... | Branch: <branch> | PR: <link> | Base: <branch the stack merges into> | Status: ready for review, merged, or draft (why)
 
 ### What changed
 - 2 to 4 bullets, behavior first
@@ -133,6 +133,7 @@ Project: ... | Branch: <branch> | PR: <link> | Base: <branch> | Status: ready fo
 |---|---|---|---|---|---|
 | 1 | <link>: <title> | <branch> | <base> | none | ready, merged, or draft (why) |
 | 2 | <link>: <title> | <branch> | <branch of 1> | 1 | ... |
+
 Merge in row order with merge commits. After each merge, retarget the next PR to <base>.
 
 ### Findings
@@ -156,7 +157,7 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 - One ticket per session. Do not carry a session across unrelated tickets.
 - Keep `GEMINI.md` files short. Long references live in their own files and get `@imported` (`@./path.md`).
 - Prefer `explorer` subagents over loading large parts of the codebase into the main context.
-- The orchestrator keeps a ledger and re-posts it at every phase change, after every verify round, and before any long step. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. Workers cannot be resumed (B9), so the ledger has no worker `id`; a side ticket shows `fix round` only while the orchestrator runs its verify loop. `PRs` lists the session's PRs bottom-up, one stack per base (B2). `Decisions` records my batch answers and permissions (`me`) and each decision made for me after the batch (`self`, with the reason). `Parked` holds the questions for the report (B4, Autonomy).
+- The orchestrator keeps a ledger and re-posts it at every phase change except into the report, after every verify round, and before any long step. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. Workers cannot be resumed (B9), so the ledger has no worker `id`; a side ticket shows `fix round` only while the orchestrator runs its verify loop. `PRs` lists the session's PRs bottom-up, one stack per base (B2). `Decisions` records my batch answers and permissions (`me`) and each decision made for me after the batch (`self`, with the reason). `Parked` holds the questions for the report (B4, Autonomy).
 
 ```
 Ledger: <TICKET-ID> | branch <name> | base <branch> | phase <orient|plan|build|verify|ship|report>
@@ -164,10 +165,10 @@ Budgets: default | <overrides>
 Units: U1 <agent> <status> <paths> | U2 ...
 Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
 Findings open: R3 [major] path:line, R5 [minor] ... | closed: R1, R2 | disputed: R4 <reason>
-Side tickets: <ID> <status> [fix round <n>/<budget>], or none
-PRs: 1 <link> <branch> -> <base> | 2 <link> <branch> -> <branch of 1>, or none
+Side tickets: <ID> <status> worktree <path> [fix round <n>/<budget>], or none
+PRs: 1 <link> <branch> -> <base> <open|draft: why|merged> | 2 <link> <branch> -> <branch of 1> ..., or none
 Decisions: <what> -> <answer> (me | self: <reason>), or none
-Parked: <unit or item>: <question>, or none
+Parked: <unit or item>: <question> | options: <a>, <b> | rec: <a>, or none
 Waiting on: <user|agent|nothing>: <what>
 Next: <one action>
 ```
@@ -217,7 +218,7 @@ Each phase runs under the B4 contract: exit test, budget, stall rule. Re-post th
 
 #### Phase 1: Orient
 - Gather context before asking anything. Spawn `explorer`s, one per independent question, in parallel.
-- Exit test: tracker, owning team, and candidate tickets identified (B2); workflow skill loaded if one covers the repo (A3); instruction chain, standards, and real gates known with their sources (B1).
+- Exit test: tracker, owning team, and candidate tickets identified (B2); workflow skill loaded if one covers the repo (A3); instruction chain, standards, and real gates known with their sources (B1); the repo's allowed merge methods (B2).
 - Back-edge: unknowns left after a round get one re-brief; whatever remains goes into the question batch.
 
 #### Phase 2: Plan
@@ -225,11 +226,12 @@ Each phase runs under the B4 contract: exit test, budget, stall rule. Re-post th
 - Trivial fix (one file, obvious, no contract impact): one unit, one-line plan.
 - Send the question batch (A1, B4 Autonomy) as one message. It is the only time you ask before the report, so make it complete:
   - every material question, with options and your recommendation, including which ticket when several match;
-  - every permission the plan needs through completion: merge (B2), any other B2 or B6 gated action, new dependencies, and anything outward-facing beyond opening PRs;
+  - every permission the plan needs through completion: merge (B2), and whether it covers the whole stack or the main PR only; any other B2 or B6 gated action; new dependencies, and anything outward-facing beyond opening PRs;
   - the forks you expect mid-build (a pre-existing gate failure, a choice between two designs), each with the option you will take unless told otherwise.
 - Wait for the answers. Record each on the ledger's `Decisions` line as `me`.
 - Then resolve the ticket per B2: use the match, or create one whose description holds the planned change and how it will be verified. Then get on its branch (B2).
 - Exit test: units defined as above; every material question answered; ticket resolved and on its branch. From here, run to Phase 6 without asking (Autonomy).
+- Re-plan (a back-edge from Build or Verify): skip the batch. Decide or park any new question under Autonomy; the exit test then reads "answered or parked".
 
 #### Phase 3: Build
 Dispatch units with disjoint scopes in parallel; serialize overlapping ones. Decide per returned unit:
@@ -249,22 +251,22 @@ Triage every round:
 - In-scope blocker, major, or minor: a fix brief with the finding IDs to the implementer that owns the paths (re-spawn), or a new one. Integrate as in Phase 3.
 - Nit: optional. Out of scope: B3.
 - Design-level finding (the plan was wrong): back to Phase 2 under the re-plan budget (B4).
-- Verifier `FAIL` caused by the diff: a fix brief with the failure excerpt to the implementer that owns the paths.
-- A failure that looks unrelated to the diff: confirm it on the base with a verifier run in a temporary detached worktree at the merge base (`git worktree add --detach .worktrees/<tmp> <merge-base>`, read there as in B3; remove it after). If it fails there too, it is pre-existing: B3 side ticket, then ship with it unless the batch said otherwise: log it as `self`, list it in the PR under "Risk and rollout", and never merge over it.
-- `FLAKY`: never re-run it to get a pass. In a test or path the diff added or changed: a fix brief with both results to the implementer that owns the paths. Otherwise: B3 side ticket for the flaky check, then ship with it unless the batch said otherwise: log it as `self`, list it in the PR under "Risk and rollout", and never merge over it.
+- Verifier `FAIL` caused by the diff, or `FLAKY` in a test or path the diff added or changed: a fix brief with the failure excerpt to the implementer that owns the paths. Never re-run a `FLAKY` gate to get a pass.
+- Any other `FAIL` or `FLAKY`: confirm it on the base with a verifier run in a temporary detached worktree at the merge base (`git worktree add --detach .worktrees/<tmp> <merge-base>`, read there as in B3; remove it after). If it fails or flakes there too, the diff did not cause it: B3 side ticket, then ship with it unless the batch said otherwise. Log it as `self`, list it in the PR under "Risk and rollout", and never merge over it. Otherwise a `FAIL` goes back as a fix brief with both results; a `FLAKY` outside the tests and paths the diff changed is handled like a pre-existing failure, with both results in its side ticket.
 
 Exit test, on the current HEAD, read from the triaged findings, not the raw verdict:
 - every reviewer `Status: done`; no open blocker or major; every minor closed in a later round (a fix moves HEAD) or justified; nits optional; and
-- every verifier `Status: done` with `Scope: full` and Overall `PASS`, or `INCOMPLETE` only for gates that cannot run locally, each listed with its reason. A pre-existing failure, or a `FLAKY` one outside the tests and paths the diff changed, counts once it has a side ticket and a ship-with-it entry on the ledger's `Decisions` line (`me` or `self`).
+- every verifier `Status: done` with `Scope: full` and Overall `PASS`, or `INCOMPLETE` only for gates that cannot run locally, each listed with its reason. A failure the diff did not cause counts once it has a side ticket and a ship-with-it entry on the ledger's `Decisions` line (`me` or `self`).
 
 Round n+1: a fresh reviewer on the full diff plus the previous round's findings, `disputed` ones included, to mark each `closed`, `open`, `regressed`, or `disputed`; and a verifier. Intermediate rounds may scope the verifier to the gates that failed; the round before ship runs every gate.
 
-Budget: 3 fix rounds; the count does not reset after a re-plan. Stall, stricter than B4's and winning here: a finding still open after its fix, or a gate failing the same way after its fix. On budget or stall, stop fixing: park the open findings (Autonomy) and ship the PR as a draft with them listed under "Risk and rollout".
+Budget: 3 fix rounds; the count does not reset after a re-plan. Stall, stricter than B4's and winning here: a finding still open after its fix, or a gate failing the same way after its fix. On budget or stall, stop fixing: park the open findings (Autonomy) and ship the PR as a draft, on top of the stack (B2), with them listed under "Risk and rollout".
 
 #### Phase 5: Ship
 Per B2. Record each justified finding in the PR description.
-- Stack (B2): if the session already has an open PR into the same base, merge the top one's branch into yours (`git merge <remote>/<branch>`) and target that branch. A merge conflict goes to an implementer as a fix brief, then re-run the verifier on the new HEAD. Wait for a hard prerequisite's PR before opening yours. Keep the ledger's `PRs` line in stack order.
-- Merge only with a `me` permission on the `Decisions` line, the Phase 4 exit test met, and every PR below it merged. Never merge a draft. Merge bottom-up with merge commits; after each, retarget the next PR to the base (`gh pr edit <n> --base <base>`, or the host's equivalent) unless the host already did.
+- Stack (B2): if the session has open side PRs into the same base, fetch, merge the top one's branch into yours (`git merge <remote>/<branch>`), and target that branch. Then run a verifier on the new HEAD, plus a fresh reviewer when the merge needed a conflict fix (a conflict goes to an implementer as a fix brief). Route what they find as in Phase 4. Keep the ledger's `PRs` line in stack order.
+- A hard prerequisite that ended without a PR (parked): ship yours as a draft (Autonomy). side-fix runs in the foreground (B9), so none is still running here.
+- Merge only the PRs a `me` permission on the `Decisions` line covers, each with the Phase 4 exit test met and every PR below it merged. Never merge a draft. Merge bottom-up with `gh pr merge <n> --merge` (no `--delete-branch` unless the user asked); after each, retarget the next PR to the base (`gh pr edit <n> --base <base>`, or the host's equivalent) unless the host already did. If the repo allows only squash or rebase merges, first merge the updated base into the next PR's branch.
 
 Exit test: every PR open, or merged where granted; ticket in its review state (or skipped with the reason); ticket and PR linked both ways. Stop.
 
@@ -283,25 +285,26 @@ Gates: <exact commands> (source: <path:line>)
 Findings to close: <R<n> [severity] path:line, ...> (fix briefs only)
 Finding ID prefix: <X>- (reviewers only, when several run in one round)
 Prior report: <the worker's last report> (re-spawns only)
-Stack onto: <branch of the session's top open PR into the same base, or the base> (side-fix only)
+Stack onto: <branch of the session's top open side PR into the same base, or the base> (side-fix only)
 Budget: <B4 default, or the override>
 Other units in flight: <U<m> <paths>, or none>
 Report: your standard format; first line `Status: <state> after <n> passes: <reason>`
 ```
 
 ### Ledger
-Keep the B8 ledger in its exact format. Re-post it at every phase change, after every verify round, and before any long step. Name any budget override on its `Budgets` line. Record each of the user's answers and permissions on its `Decisions` line as `me` (question-batch answers, approved B2 defaults), each decision you make after the batch as `self` with its reason, each parked question on its `Parked` line, and each PR on its `PRs` line in stack order. Workers cannot be resumed (B9), so the ledger carries no worker `id`. On resume after a context reset, rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory.
+Keep the B8 ledger in its exact format. Re-post it at every phase change except into Phase 6, after every verify round, and before any long step. Name any budget override on its `Budgets` line. Record each of the user's answers and permissions on its `Decisions` line as `me` (question-batch answers, approved B2 defaults), each decision you make after the batch as `self` with its reason, each parked question on its `Parked` line, and each PR on its `PRs` line in stack order. Workers cannot be resumed (B9), so the ledger carries no worker `id`. On resume after a context reset, rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory.
 
 ### Autonomy
-After the Phase 2 batch, send the user nothing that needs an answer until the Phase 6 report. The one exception is a committed secret (B3): report it at once. Handle every later gap under B4 Autonomy:
-- Decide: take the safest option that is reversible and inside the approved scope. Log it as `self: <reason>` and continue.
-- Park: when no option is safe, stop only the affected units and those that depend on them. Log the question on the `Parked` line with its options and your recommendation, and finish everything else. Parked questions go in the report's Open questions.
+After the Phase 2 batch, send the user nothing that needs an answer until the Phase 6 report. The one exception is a committed secret (B3): report it at once, push nothing until the user answers, and keep going on units that do not touch it. Handle every later gap under B4 Autonomy:
+- Decide: take the safest option that is reversible, inside the approved scope, and free of contract or security changes. Log it as `self: <reason>` and continue.
+- Park: when no option is safe, stop only the affected units and those that depend on them. Log the question on the `Parked` line with its options and your recommendation, and finish everything else. Parked questions go in the report's Open questions. When parking keeps the main PR from its exit test, ship it as a draft on top of the stack.
 - A gated action (B2, B6) the batch did not grant: never take it. Park it.
 - If the user messages mid-run, answer, record the answer as `me`, and continue.
 
 ### Side loops
 - B3 issues go to `side-fix`, which runs its own scaled-down loop in the foreground, in a worktree you create (B3), and stops at ready for verify. Brief it with the ticket ID, the issue, the parent ticket, the base branch, the absolute worktree path, the remote, the base SHA, the repo's B2 conventions, whether the main change depends on it, and `Stack onto` (B2).
 - side-fix runs in the foreground and returns before the main task continues, so its status is its last report. Carry it on the ledger's `Side tickets` line.
-- Route its `partial`, `blocked`, and `needs-input` as in Phase 3.
-- `done` with "ready for verify" (always here; side-fix cannot spawn agents): run its verify loop on its worktree as in Phase 4, with a fresh reviewer and a verifier each round and at most 3 fix rounds. Give both the worktree path, branch, and HEAD SHA, and tell them to read inside `.worktrees/` with `run_shell_command`. Send findings back by re-spawning side-fix in the same worktree with its prior report and the findings. Then ship it per B2 and B3, stacked on the current top, and record it on the `PRs` line. You open its PR yourself at ship time, so it never needs a restack.
-- A hard prerequisite goes lowest in the stack (B3); the main PR waits for it and stacks on it.
+- Route its `partial` and `needs-input` as in Phase 3.
+- `blocked`: never re-planned into the main plan. A blocker or major it reports instead of fixing: confirm it, then re-spawn it in the same worktree with its prior report and your decision (fix it, or the finding marked `disputed` with your reason). A gate failure it reports: confirm it on the base and route it as in Phase 4. Anything else, including a stack-merge conflict it could not resolve: one re-brief if the fix fits its own ticket's scope; otherwise park it.
+- `done` with "ready for verify" (always here; side-fix cannot spawn agents): run its verify loop on its worktree as in Phase 4, with a fresh reviewer and a verifier each round and at most 3 fix rounds. Give both the worktree path, branch, and HEAD SHA, and tell them to read inside `.worktrees/` with `run_shell_command`. Send findings back by re-spawning side-fix in the same worktree with its prior report and the findings. Then ship it per B2 and B3, stacked on the current top side PR (merge, verifier on the new HEAD, conflicts back to side-fix by re-spawn), and record it on the `PRs` line. You open every side PR yourself, onto the top side PR at that moment, so a side PR never needs a restack. If the main PR is already open, move it back on top: merge the new top side branch into the main branch, then verify and retarget as in Phase 5.
+- A hard prerequisite (B3): as soon as its verify loop passes and its PR is open, merge its branch into the main branch, before the next verify round, so Build and Verify run on the combined tree. Like every side PR, it sits below the main PR.

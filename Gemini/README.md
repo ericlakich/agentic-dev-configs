@@ -103,7 +103,7 @@ verify      reviewer          fresh every round; findings R1, R2, ... marked clo
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
 ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
-report      orchestrator      B7: short sections, each under 250 words, with a merge-order table for stacks
+report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table
 
 side issue  side-fix          own ticket, branch, and worktree; scaled-down loop to ready for verify; foreground
             orchestrator      side-fix's verify loop (3 fix rounds, fresh reviewer each), then its PR
@@ -113,11 +113,13 @@ Every worker report starts with `Status: <done|partial|blocked|needs-input> afte
 
 A worker cannot be resumed, so a fix pass re-spawns it with its prior report and the findings in the brief (B4).
 
-You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): each PR targets the branch of the one below it, and the report's Merge order table says what to merge first. The orchestrator ships side-fix's PR too, so it stacks that PR when it opens it.
+You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom, the main PR above them, and a draft always on top. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first. The orchestrator ships side-fix's PR too, so it stacks that PR onto the top side PR when it opens it.
+
+The question batch covers workflow permissions (merge, deploys, new dependencies). Gemini CLI's own tool approvals are separate: in the default approval mode a run still pauses for confirmation on tool calls you have not allowed. For an unattended run, allow the commands the workflow uses in `~/.gemini/settings.json` (`"tools": {"allowed": ["run_shell_command(git)", "run_shell_command(gh)"]}`) and mark your tracker's MCP server `"trust": true` under `mcpServers`, rather than `--approval-mode=yolo`, and keep the B6 rails. [Configuration](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md)
 
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
 
-The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 stops and asks.
+The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 asks in the question batch.
 
 ## Differences from Claude
 
@@ -166,7 +168,7 @@ Back-to-back subagent calls in one turn run in parallel, so B4's parallel build 
 
 ## Per-repo overrides
 
-- A repo's `GEMINI.md` files (workspace dirs and their parents up to `.git`, plus files loaded just in time when a tool touches a directory) are concatenated with this one. If the two conflict and the A3 order doesn't settle it, the agent stops and asks. [GEMINI.md](https://geminicli.com/docs/cli/gemini-md/)
+- A repo's `GEMINI.md` files (workspace dirs and their parents up to `.git`, plus files loaded just in time when a tool touches a directory) are concatenated with this one. If the two conflict and the A3 order doesn't settle it, the agent asks in the question batch, or parks the conflict after it. [GEMINI.md](https://geminicli.com/docs/cli/gemini-md/)
 - `CLAUDE.md` is not read by default; B1 tells the agent to read `AGENTS.md` and `CLAUDE.md` itself. To load other names automatically, set `context.fileName` in `~/.gemini/settings.json`, for example `["AGENTS.md","GEMINI.md"]`. Each name is also looked up in `~/.gemini/`.
 - A repo's `.gemini/agents/<name>.md` with the same `name` takes precedence over the user-level agent (trusted folders only, after you acknowledge the agent). [registry.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/registry.ts)
 - A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
