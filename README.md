@@ -37,7 +37,7 @@ The global instructions file has two parts.
 - **Verify.** An evaluator loop: each round, a fresh `reviewer` and a `verifier` check the full diff, and findings go back to an implementer as fix briefs. At most 3 fix rounds.
 - **Limits.** Every loop has a budget and a stall rule: stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence. After the question batch, a gap with a safe, reversible option is decided and logged. When none exists, a budget runs out, or progress stalls, the orchestrator parks the affected work, finishes the rest, and puts the question in the final report. Only a committed secret interrupts.
 - **Ledger.** The orchestrator tracks units, fix rounds, open findings, side tickets, PRs, decisions, and parked questions in a ledger. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
-- **Stacked PRs.** When a session opens more than one PR into the same base, they form one stack: each PR targets the branch of the one below it. Stacks merge bottom-up with merge commits, and only when you granted merge in the question batch.
+- **Stacked PRs.** When a session opens more than one PR into the same base, they form one stack: each PR targets the branch of the one below it. Side fixes sit below the main PR, and a draft always goes on top. Stacks merge bottom-up with merge commits, and only the PRs you granted merge for.
 - **Final report.** Short sections in a fixed order (what changed, verification, merge order, findings, decisions made for you, recommendations, follow-ups, open questions), each under 250 words where possible.
 
 `Claude/README.md` has the phase diagram and each worker's loop; B4 of the global file has the full contract.
@@ -129,5 +129,6 @@ Diff the workers and skills file by file the same way, for example `diff Claude/
 
 ## Notes
 
+- The question batch covers workflow permissions (merge, deploys, new dependencies), not each tool's own approval prompts. For an unattended run, pre-allow the commands the workflow uses (`git`, `gh`, your tracker's tools) in the tool's permission settings.
 - This repo is public. Never commit auth files, API keys, or a copy of a tool's home directory. With symlinked installs, anything a tool writes into a linked directory lands in this working tree, so check `git status` before committing.
 - The tool facts behind each port were checked against official docs and source in October 2026. These tools change quickly. If an agent or skill stops loading, check the port's Known gaps and the tool's current docs first.

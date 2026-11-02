@@ -19,7 +19,7 @@
 2. A project workflow skill that covers this repo (per the repo's docs or the skill's own description).
 3. This document.
 
-Also follow the repo's engineering standards (B1 says where they live) and any org-level standards this file or the repo's docs point to. If two sources conflict and the order above does not settle it (standards vs skill, a repo `CLAUDE.md` vs this document), stop and ask. Do not pick silently.
+Also follow the repo's engineering standards (B1 says where they live) and any org-level standards this file or the repo's docs point to. If two sources conflict and the order above does not settle it (standards vs skill, a repo `CLAUDE.md` vs this document), ask: in the question batch, or after it park the conflict (B4, Autonomy). Do not pick silently.
 
 ## Part B: Development workflow
 
@@ -38,7 +38,7 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
 
 ### B2. Ticket, branch, PR
 - Every code change needs a ticket in the repo's tracker (Linear, Jira, GitHub Issues, or whatever the repo uses), including one-line fixes.
-- Identify the tracker and owning team from the workflow skill or repo docs. If undocumented, infer from recent branch names and PR titles, and confirm the inference in the A1 batch before creating anything. No tool access to that tracker: stop and ask. Never fabricate an ID.
+- Identify the tracker and owning team from the workflow skill or repo docs. If undocumented, infer from recent branch names and PR titles, and confirm the inference in the A1 batch before creating anything. No tool access to that tracker: ask in the question batch. Never fabricate an ID.
 - Search the owning team's tickets first. One clear match: use it and say which. Several plausible matches: ask which. No match: create one. Never ask permission to create.
 - New tickets: outcome-oriented title; description covering the problem, the intended change, and how it will be verified; assigned to me; placed in the best-fit grouping (Linear project, Jira epic, GitHub milestone, or the tracker's equivalent). List the options, pick by scope match, and name the pick. If nothing fits, leave the grouping empty and say so.
 - Branch: `<TICKET-ID>/<short-slug>`, lowercase kebab-case slug, 3 to 6 words. Example: `ABC-123/fix-login-redirect`. If the repo documents its own branch convention, it wins.
@@ -48,14 +48,14 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
   - PR title: `<TICKET-ID>: <outcome-oriented summary>`.
   - PR description sections: Summary (behavior first), Ticket, Changes, Verification (commands -> results), Contract impact, Risk and rollout.
   - Ticket states: in-progress when work starts, review state when the PR opens. If the tracker has no such state, skip the move and say so.
-- Open the PR, move the ticket to its review state, and link ticket and PR both ways. Merge only when I granted it in the question batch or ask later, and only once the verify exit test passed; otherwise stop at the open PR. No force-push or branch deletion unless I ask.
-- Stacking: when a session opens more than one PR into the same base (split work, side fixes), stack them in one chain. The first PR targets the base. Each later PR's branch starts from, or merges in, the branch of the PR below it, and targets that branch. A hard prerequisite (B3) goes lowest. Each PR names the PRs below and above it under "Risk and rollout".
-- Merging a stack: bottom-up, with merge commits. After each merge, retarget the next PR to the base unless the host already did. A squash or rebase merge forces a rebase and force-push of every PR above it, so use one only when I ask. B7 lists the chain in merge order.
+- Open the PR, move the ticket to its review state, and link ticket and PR both ways. Merge only the PRs I granted in the question batch (the whole stack, or the main PR only) or ask for later, and only once the verify exit test passed; otherwise stop at the open PR. No force-push or branch deletion unless I ask.
+- Stacking: when a session opens more than one PR into the same base (the main PR and side fixes), stack them in one chain. Order, bottom-up: side-fix PRs (B3) in the order they open, then the main PR; a draft always goes on top. The lowest PR targets the base. Each PR above it starts from, or merges in, the branch of the PR below it, and targets that branch. A PR that opens out of order is moved into place: the PR that belongs above it merges in its branch, re-runs its gates, pushes normally, and retargets onto it. Each PR names the PR below it under "Risk and rollout", updated whenever its target changes.
+- Merging a stack: bottom-up, with merge commits (`gh pr merge <n> --merge`, never `--delete-branch` unless I ask). After each merge, retarget the next PR to the base unless the host already did. If the repo allows only squash or rebase merges (Orient checks), first merge the updated base into the next PR's branch. B7 lists the chain in merge order.
 
 ### B3. Unrelated issues found mid-task
 - Do not fold them into the current branch. One ticket, one PR.
 - Create a ticket for the issue without asking (B2 rules), note which ticket you found it under, then spawn the `side-fix` subagent to handle it end to end in its own scaled-down loop (B4): its own `<TICKET-ID>/<slug>` branch from the correct base, fix, gates, PR. If it cannot spawn agents, it stops at ready for verify, and the orchestrator runs its verify loop and ships it (orchestrator Side loops). It runs in the background in a separate git worktree, so it never touches the main branch's working tree. Pass it the repo's B2 conventions in the brief.
-- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: its PR goes lowest in the stack, and the main branch stacks on it (B2). Record the ordering in both PRs under "Risk and rollout".
+- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch as soon as side-fix is done, before the next verify round. Record the ordering in both PRs under "Risk and rollout".
 - Committed secrets: stop and flag immediately. That is a rotation, not a cleanup.
 - Report every side ticket and PR in the final summary (B7).
 
@@ -75,16 +75,16 @@ A loop gathers context, acts, checks against ground truth, and decides, until an
   - Re-plan: once per ticket. A second re-plan, or any re-plan that changes scope or a public contract, is parked (Autonomy).
 - **Stall rule.** Stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence (no new finding, no diff change, no new information). Never repeat an identical action expecting a different result. In the verify loop the stricter Phase 4 rule wins: a finding still open after its fix, or a gate failing the same way after its fix, stops it.
 - **Flaky.** A check that changes result with no code change is flaky. Re-run it once to confirm, then report it as flaky. Never loop on it, and never count a flaky pass as a pass.
-- **Autonomy.** The orchestrator asks me things once: the question batch in Plan, after Orient has gathered the context. The batch holds every question, every permission the work will need through completion (B2 and B6 gated actions, new dependencies, anything outward-facing beyond opening PRs), and the forks it expects mid-build, each with the option it will take unless I say otherwise. Once I answer, it runs to the report without asking. A gap found later, including a worker's `needs-input`:
+- **Autonomy.** The orchestrator asks me things once: the question batch in Plan, after Orient has gathered the context. The batch holds every question, every permission the work will need through completion (merge, and for which PRs; other B2 and B6 gated actions; new dependencies; anything outward-facing beyond opening PRs), and the forks it expects mid-build, each with the option it will take unless I say otherwise. Once I answer, it runs to the report without asking. A gap found later, including a worker's `needs-input`:
   - Safe option exists (reversible, inside the approved scope, no contract or security change): take the safest one, log it on the ledger's `Decisions` line as `self`, and continue.
-  - No safe option (irreversible, outward-facing beyond what I approved, a scope or public-contract change, a security call, a standards conflict (A3), a second re-plan), or a loop that ends on budget or stall: park the affected units and anything that depends on them, finish everything else, and raise the question in the report with options and a recommendation.
+  - No safe option (irreversible, outward-facing beyond what I approved, a scope or public-contract change, a security call, a standards conflict (A3), a second re-plan), or a loop that ends on budget or stall: park the affected units and anything that depends on them, finish everything else, and raise the question in the report with options and a recommendation. When parking keeps the main PR from its exit test, ship it as a draft with the parked items under "Risk and rollout".
   - A gated action (B2, B6) the batch did not grant is never taken. Park it.
-  - The one interrupt: a committed secret (B3). Tell me at once.
+  - The one interrupt: a committed secret (B3). Tell me at once, push nothing until I answer, and keep going on units that do not touch it.
 - **Resume vs fresh.** Resume the same worker (it keeps its context) for its own unit: a fix pass, a narrowed goal, integration feedback. Spawn fresh when independence matters (every reviewer or verifier run) or when the worker stalled (its context is polluted; that spawn is the one re-brief). Never spawn a fresh side-fix while its worktree exists. If a worker cannot be resumed, re-spawn it with its prior report and the findings in the brief.
 - **Outer loop.** The orchestrator runs these phases; `~/.claude/agents/orchestrator.md` holds each phase's exit test, decision rules, and back-edges.
   0. Intake: not a code change -> answer under Part A; a PR review -> the `pr-review` skill; a code change -> the loop.
   1. Orient: gather context before asking anything. The orchestrator searches the tracker (B2) and loads the workflow skill; `explorer`s map the code, standards, and real gates (B1).
-  2. Plan: units with disjoint file scopes, each with an exit test and gates; the one question batch (Autonomy); then the ticket resolved (B2) and its branch. From here on, no questions until the report.
+  2. Plan: units with disjoint file scopes, each with an exit test and gates; the one question batch (Autonomy); then the ticket resolved (B2) and its branch. From here on, no questions until the report; a re-plan skips the batch (Autonomy).
   3. Build: one `implementer` per unit; the orchestrator reads each diff and commits it.
   4. Verify: fresh `reviewer`s and one `verifier` each round; findings return as fix briefs.
   5. Ship: per B2, stacked when there is more than one PR; merged only if granted.
@@ -105,11 +105,11 @@ A loop gathers context, acts, checks against ground truth, and decides, until an
 - Never fabricate ticket IDs, file paths, API shapes, env values, or command output. Read it or ask.
 
 ### B7. Final report
-The session's last message, written to be scanned. Use these sections in this order: bullets, one point each, the point first. Keep each section under 250 words where possible. Link to the PR, ticket, or file for detail; never paste logs, worker reports, or the ledger. Skip a section with nothing in it, except Open questions.
+The session's last message, written to be scanned. Use these sections in this order. Write bullets, one point each, the point first. Keep each section under 250 words where possible. Link to the PR, ticket, or file for detail; never paste logs, worker reports, or the ledger. Skip a section with nothing in it, except Open questions.
 
 ```
 ## <TICKET-ID>: <one-line outcome>
-Project: ... | Branch: <branch> | PR: <link> | Base: <branch> | Status: ready for review, merged, or draft (why)
+Project: ... | Branch: <branch> | PR: <link> | Base: <branch the stack merges into> | Status: ready for review, merged, or draft (why)
 
 ### What changed
 - 2 to 4 bullets, behavior first
@@ -123,6 +123,7 @@ Project: ... | Branch: <branch> | PR: <link> | Base: <branch> | Status: ready fo
 |---|---|---|---|---|---|
 | 1 | <link>: <title> | <branch> | <base> | none | ready, merged, or draft (why) |
 | 2 | <link>: <title> | <branch> | <branch of 1> | 1 | ... |
+
 Merge in row order with merge commits. After each merge, retarget the next PR to <base>.
 
 ### Findings
@@ -146,7 +147,7 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 - One ticket per session. Do not carry a session across unrelated tickets.
 - Keep `CLAUDE.md` files short. Long references live in their own files and get `@imported`.
 - Prefer `explorer` subagents over loading large parts of the codebase into the main context.
-- The orchestrator keeps a ledger and re-posts it at every phase change, after every verify round, and before any long step. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker ID the tool returned, to resume it by (omit it where the tool cannot resume); a side ticket shows `fix round` only while the orchestrator runs its verify loop. `PRs` lists the session's PRs bottom-up, one stack per base (B2). `Decisions` records my batch answers and permissions (`me`) and each decision made for me after the batch (`self`, with the reason). `Parked` holds the questions for the report (B4, Autonomy).
+- The orchestrator keeps a ledger and re-posts it at every phase change except into the report, after every verify round, and before any long step. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker ID the tool returned, to resume it by (omit it where the tool cannot resume); a side ticket shows `fix round` only while the orchestrator runs its verify loop. `PRs` lists the session's PRs bottom-up, one stack per base (B2). `Decisions` records my batch answers and permissions (`me`) and each decision made for me after the batch (`self`, with the reason). `Parked` holds the questions for the report (B4, Autonomy).
 
 ```
 Ledger: <TICKET-ID> | branch <name> | base <branch> | phase <orient|plan|build|verify|ship|report>
@@ -154,10 +155,10 @@ Budgets: default | <overrides>
 Units: U1 <agent> <status> <paths> id <worker-id> | U2 ...
 Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
 Findings open: R3 [major] path:line, R5 [minor] ... | closed: R1, R2 | disputed: R4 <reason> | justified: R6 <reason>
-Side tickets: <ID> <status> id <worker-id> [fix round <n>/<budget>], or none
-PRs: 1 <link> <branch> -> <base> | 2 <link> <branch> -> <branch of 1>, or none
+Side tickets: <ID> <status> id <worker-id> worktree <path> [fix round <n>/<budget>], or none
+PRs: 1 <link> <branch> -> <base> <open|draft: why|merged> | 2 <link> <branch> -> <branch of 1> ..., or none
 Decisions: <what> -> <answer> (me | self: <reason>), or none
-Parked: <unit or item>: <question>, or none
+Parked: <unit or item>: <question> | options: <a>, <b> | rec: <a>, or none
 Waiting on: <user|agent|nothing>: <what>
 Next: <one action>
 ```
