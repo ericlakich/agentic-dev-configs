@@ -39,6 +39,8 @@ If `../Claude/` is also installed (`~/.claude/agents`), Cursor sees both sets. O
 
 To check an agent loaded, invoke it by name, for example `/explorer`.
 
+All agents use `model: inherit`, so they run on the main session's model unless the orchestrator names another when it launches them. Per B9 (Model choice), it picks a cheaper tier for bounded, checkable work such as explorer lookups and verifier runs, and the session's model for reviewers, hard implementer units, and side-fix. A model you name in the session wins. Cursor documents that the parent agent can name a model at launch, but not the parameter, whether it overrides a non-`inherit` `model` field, or which model a resumed subagent uses (unverified). On legacy request-based plans without Max Mode, subagents run on Composer regardless. ([subagents](https://cursor.com/docs/subagents))
+
 **Skills.** Link the skill folder, not the whole skills directory, which may hold other skills ([skills docs](https://cursor.com/docs/context/skills)):
 
 ```bash
