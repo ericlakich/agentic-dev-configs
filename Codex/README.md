@@ -102,6 +102,8 @@ You hear from the orchestrator twice with something to answer: the question batc
 
 The question batch covers workflow permissions (merge, deploys, new dependencies). Codex's own sandbox approvals are separate: in the default workspace-write sandbox every `.git` write asks for approval (Known gaps), so a run still pauses on commits, fetches, worktrees, and stack merges. For an unattended run, add `prefix_rule(pattern = [...], decision = "allow")` rules for the commands the workflow uses (`git`, `gh`) in a `$CODEX_HOME/rules/*.rules` file. A command whose every segment matches an allow rule skips its prompt and runs outside the sandbox ([`exec_policy.rs`][exec-policy]). Keep the rules narrow and keep the B6 rails: an allow rule for `["git", "push"]` also allows `git push --force`, which only B6 forbids. Models that ignore allow rules (`IgnoreForCyberModel`) still prompt ([`model_policy.rs`][model-policy]).
 
+Model choice (B9): the orchestrator passes `spawn_agent`'s `model` argument (an exact slug from the tool's model list; no aliases), and optionally `reasoning_effort`, at spawn time. It picks a cheaper tier for bounded, checkable work such as explorer lookups and verifier runs, and the session's model for reviewers, hard implementer units, and side-fix. A model you name in the session wins. Without `model`, a worker runs on `agents.default_subagent_model` if set, else the session's model, and a role file's own `model` would override the argument (these set none). Resuming a worker cannot change its model. If the multi-agent V2 setting `expose_spawn_agent_model_overrides` is off, the argument is hidden and workers run on the configured model. ([`multi_agents_spec.rs`][ma-spec], [`child_config.rs`][child-config])
+
 ## Differences from Claude
 
 | Feature | Claude | Codex |
@@ -119,7 +121,7 @@ The question batch covers workflow permissions (merge, deploys, new dependencies
 | Worktree isolation | `isolation: worktree` on side-fix | None per agent; the orchestrator creates `.worktrees/<TICKET-ID>` for side-fix (B3) |
 | Nested subagents | side-fix spawns `reviewer` and `verifier` | V1: off (`agents.max_depth = 1`). V2 (current models): allowed. Either way the orchestrator runs side-fix's verify loop and ships its branch |
 | PR stacking for side-fix | side-fix merges its `Stack onto` branch and opens its PR against it; the orchestrator restacks one that finished late | side-fix branches from the base and never starts a merge; the orchestrator merges the current top side PR's branch into it at ship time, and a conflict goes back to side-fix to resolve inside its ticket's scope |
-| Model selection | `model: inherit` | No `model` set in these files; roles accept `model` and `model_reasoning_effort`, and `config.toml` has `agents.default_subagent_model` |
+| Model selection | `model: inherit`; the orchestrator picks per spawn with the Agent tool's `model` parameter | No `model` set in these files; the orchestrator picks per spawn with `spawn_agent`'s `model` and `reasoning_effort` arguments. Roles accept `model` and `model_reasoning_effort` (a role's `model` would override the argument), and `config.toml` has `agents.default_subagent_model` |
 
 Not used by this port: hooks (`~/.codex/hooks.json` or `[hooks]` in `config.toml`) and custom prompts (`~/.codex/prompts`), which Codex removed.
 
