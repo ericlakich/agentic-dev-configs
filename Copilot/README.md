@@ -109,7 +109,7 @@ verify      reviewer          fresh every round; findings R1, R2, ... marked clo
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
 ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
-report      orchestrator      B7: short sections, each under 250 words, with a merge-order table for stacks
+report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table
 
 side issue  side-fix          own ticket, branch, and PR in a worktree the orchestrator creates; scaled-down loop, 3 fix rounds, spawned in the background
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
@@ -117,11 +117,13 @@ side issue  side-fix          own ticket, branch, and PR in a worktree the orche
 
 Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
 
-You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
+You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom, the main PR above them, and a draft always on top. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
+
+The question batch covers workflow permissions (merge, deploys, new dependencies). Copilot CLI's own tool approvals are separate: a run still pauses on any shell command, file write, or MCP tool you have not allowed. For an unattended run, start the session with `--allow-tool` rules for what the workflow uses, for example `copilot --agent orchestrator --allow-tool='shell(git:*),shell(gh:*),write,<tracker-mcp-server>'`, and keep the B6 rails. `--deny-tool` rules win over allow rules. Unverified: whether these rules also cover the subagents the orchestrator spawns. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference))
 
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
 
-The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 stops and asks.
+The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 asks in the question batch.
 
 Loop budgets (B4) are enforced by instructions only.
 
@@ -160,7 +162,7 @@ Loop budgets (B4) are enforced by instructions only.
 
 ## Per-repo overrides
 
-- Copilot CLI reads a repo's `.github/copilot-instructions.md`, `.github/instructions/**`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and `.claude/rules`, at the root, the cwd, the directories in between, and nested paths. They are combined with this file and de-duplicated, with no general precedence order. If they conflict and the A3 order doesn't settle it, the agent stops and asks. ([custom instructions](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions))
+- Copilot CLI reads a repo's `.github/copilot-instructions.md`, `.github/instructions/**`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and `.claude/rules`, at the root, the cwd, the directories in between, and nested paths. They are combined with this file and de-duplicated, with no general precedence order. If they conflict and the A3 order doesn't settle it, the agent asks in the question batch, or parks the conflict after it. ([custom instructions](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions))
 - `/instructions` toggles individual files; `--no-custom-instructions` skips them all.
 - A repo's `.github/agents/<name>.agent.md` or `.claude/agents/` agent does not replace the user-level agent with the same ID. The user-level agent wins, then `.github/agents/`, then `.claude/agents/`. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference))
 - A repo agent that stands in for a worker (it loads only where you have no user-level agent with that ID) must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
