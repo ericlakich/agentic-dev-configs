@@ -127,6 +127,8 @@ The workflow assumes the agent can reach the repo's ticket tracker (through an M
 
 Loop budgets (B4) are enforced by instructions only.
 
+Model choice (B9) falls back to configured models here. The `task` tool documents no per-spawn model argument, so the orchestrator cannot pick a cheaper or stronger model per spawn. Each agent runs on its `model` frontmatter (unset in these files, so it inherits the session's model) or on the per-agent subagent model you set with `/subagents`. To run explorer and verifier on a cheaper model, set it there or add `model:` to their agent files. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference), [custom agents configuration](https://docs.github.com/en/copilot/reference/custom-agents-configuration))
+
 ## Differences from Claude
 
 | Feature | Claude | Copilot CLI |
@@ -142,7 +144,7 @@ Loop budgets (B4) are enforced by instructions only.
 | Background | `background: true` on side-fix | Chosen per spawn, not in the agent file; the orchestrator spawns side-fix in the background (B3, B9) |
 | Worktree isolation | `isolation: worktree` on side-fix | Per session only (`/new worktree`, `--worktree`); the orchestrator creates `.worktrees/<TICKET-ID>` for side-fix (B3) |
 | Nested subagents | side-fix spawns `reviewer` and `verifier`; if it cannot spawn, it stops at ready for verify | Same, with the same fallback; tool filters carry into nested subagents |
-| Model selection | `model: inherit` | `model` unset, so it inherits |
+| Model selection | `model: inherit`; the orchestrator picks a model per spawn with the Agent tool's `model` parameter (B9) | `model` unset, so it inherits; no documented per-spawn model, so B9 falls back to each agent's configured model (`model` frontmatter or `/subagents`) |
 
 ## Known gaps
 

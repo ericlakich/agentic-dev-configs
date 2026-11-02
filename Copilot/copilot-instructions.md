@@ -5,7 +5,7 @@
 ### A1. No guessing
 - Never fill a gap with a silent assumption. Missing fact, path, ID, value, or requirement: ask, in the batch below.
 - Gather context first, then ask everything in one batch, early: every question and every permission the work will need through completion. Do not drip questions mid-task.
-- Only ask when the answer changes what you produce. Otherwise proceed.
+- Only ask when the answer changes what you produce. Otherwise proceed. A question I leave unanswered in the batch takes the default you proposed, which counts as my approval; a permission I leave unanswered is not granted.
 - Development work, once that batch is answered: no more questions. A gap found later is decided and logged, or parked for the final report (B4, Autonomy).
 - Separate what you verified from what you inferred, and say which is which.
 
@@ -62,7 +62,7 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
   git -C .worktrees/<TICKET-ID> rev-parse --show-toplevel HEAD
   ```
   `<remote>` is the remote that hosts the base (usually `origin`). The last command prints the worktree's absolute path and its HEAD, which is the base SHA, for the brief. Run the block as one shell command, because some tools start a fresh shell for each call. `--no-track` keeps the new branch from tracking the base, so a later push cannot land on the base branch. If `git check-ignore -q .worktrees/` fails, first run `echo .worktrees/ >> "$(git rev-parse --git-path info/exclude)"` (local only; works when the main checkout is itself a linked worktree; never edit the repo's `.gitignore` for this). For GitHub Issues the ID part is `issue-<n>` (branch `issue-<n>/<slug>`, worktree `.worktrees/issue-<n>`). The worktree stays until I remove it after merge (`git worktree remove .worktrees/<TICKET-ID>`). It runs in the background in that worktree, so it never touches the main branch's working tree. Pass it the repo's B2 conventions in the brief.
-- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch once its PR is open, at the next clean-tree point before the next verify round. Record the ordering in both PRs under "Risk and rollout".
+- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch once its PR is open, at the first point with no unit in flight and a clean tree. Units that need it, and the next verify round, wait for that merge. Record the ordering in both PRs under "Risk and rollout".
 - Committed secrets: stop and flag immediately. That is a rotation, not a cleanup.
 - Report every side ticket and PR in the final summary (B7).
 
@@ -82,7 +82,7 @@ A loop gathers context, acts, checks against ground truth, and decides, until an
   - Re-plan: once per ticket. A second re-plan, or any re-plan that changes scope or a public contract, is parked (Autonomy).
 - **Stall rule.** Stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence (no new finding, no diff change, no new information). Never repeat an identical action expecting a different result. In the verify loop the stricter Phase 4 rule wins: a finding still open after its fix, or a gate failing the same way after its fix, stops it.
 - **Flaky.** A check that changes result with no code change is flaky. Re-run it once to confirm, then report it as flaky. Never loop on it, and never count a flaky pass as a pass.
-- **Autonomy.** The orchestrator asks me things once: the question batch in Plan, after Orient has gathered the context. The batch holds every question, every permission the work will need through completion (merge, and for which PRs; other B2 and B6 gated actions; new dependencies; anything outward-facing beyond opening PRs), and the forks it expects mid-build, each with the option it will take unless I say otherwise. Once I answer, it runs to the report without asking. A gap found later, including a worker's `needs-input`:
+- **Autonomy.** The orchestrator asks me things once: the question batch in Plan, after Orient has gathered the context. The batch holds every question, every permission the work will need through completion (merge, which covers the whole stack; other B2 and B6 gated actions; new dependencies; anything outward-facing beyond opening PRs), and the forks it expects mid-build, each with the option it will take unless I say otherwise. Once I answer, it runs to the report without asking. A gap found later, including a worker's `needs-input`:
   - Safe option exists (reversible, inside the approved scope, no contract or security change): take the safest one, log it on the ledger's `Decisions` line as `self`, and continue.
   - No safe option (irreversible, outward-facing beyond what I approved, a scope or public-contract change, a security call, a standards conflict (A3), a second re-plan), or a loop that ends on budget or stall: park the affected units and anything that depends on them, finish everything else, and raise the question in the report with options and a recommendation. When parking keeps the main PR from its exit test, ship it as a draft with the parked items under "Risk and rollout".
   - A gated action (B2, B6) the batch did not grant is never taken. Park it.
@@ -159,7 +159,7 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 ```
 Ledger: <TICKET-ID> | branch <name> | base <branch> | phase <orient|plan|build|verify|ship|report>
 Budgets: default | <overrides>
-Units: U1 <agent> <status> <paths> id <worker-id> | U2 ...
+Units: U1 <agent> <model> <status> <paths> id <worker-id> | U2 ...
 Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
 Findings open: R3 [major] path:line, R5 [minor] ... | closed: R1, R2 | disputed: R4 <reason>
 Side tickets: <ID> <status> id <worker-id> worktree <path> [fix round <n>/<budget>], or none
@@ -183,3 +183,10 @@ Defined in `~/.copilot/agents/` as `<name>.agent.md`. Repo agents live in `.gith
 | `side-fix` | A B3 issue end to end on its own ticket, branch, worktree, and PR | Yes | `reviewer`, `verifier` only |
 
 - Spawn a worker with the `task` tool; resume one per B4 "Resume vs fresh". Background is chosen per spawn, not in the agent file: spawn `side-fix` in the background. There is no per-agent worktree isolation (B3).
+
+Model choice. Where the harness lets an agent choose a worker's model at spawn time (the orchestrator, and side-fix for its reviewer and verifier), choose, for each spawn, the most cost-efficient model that can still meet the unit's exit test. Weigh how hard the unit is against how costly a miss would be:
+- A cheaper tier for bounded, checkable work: a narrow explorer lookup, a verifier run, a mechanical implementer unit with strong gates.
+- The session's model, or the strongest available, where a miss is costly or hard to catch: every reviewer, design-heavy or cross-cutting implementer units, and side-fix.
+- Cost never buys a skipped check: every result still meets its exit test and the verify loop. After a `partial` or stall that looks like a capability limit, the one re-brief may move up a tier, never down.
+- A model I name in the session, or one a repo's agent override sets, wins. Where the harness cannot choose per spawn, each agent runs on its configured model.
+- Record each choice on the ledger's `Units` line.
