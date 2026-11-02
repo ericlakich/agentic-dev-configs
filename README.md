@@ -19,7 +19,7 @@ User-level configuration for AI coding agents, one directory per tool. Each dire
 
 The global instructions file has two parts.
 
-**Part A** applies to every task: never guess (ask in one early batch), keep replies short, separate verified from inferred, and follow a fixed precedence (your instruction in the session, then a project workflow skill, then the global file).
+**Part A** applies to every task: never guess (gather context, then ask questions and permissions in one early batch), keep replies short, separate verified from inferred, and follow a fixed precedence (your instruction in the session, then a project workflow skill, then the global file).
 
 **Part B** is the development workflow. Every change gets a ticket, a `<TICKET-ID>/<slug>` branch, and a PR. The work runs as agentic loops: gather context, act, check against ground truth (command output, test results, or a verdict from an agent that did not write the code), and decide. A loop repeats until its exit test passes, its budget runs out, progress stalls, or it needs your input.
 
@@ -32,11 +32,13 @@ The global instructions file has two parts.
 | `verifier` | Runs build, tests, lint, and type check exactly as CI does; reports raw results | No |
 | `side-fix` | Takes an unrelated issue found mid-task to its own ticket, branch, and PR without touching the main working tree | Yes |
 
-- **Outer loop.** The orchestrator runs intake, orient, plan, build, verify, ship, and report, and handles all contact with you.
-- **Inner loops.** Each worker runs its own loop on one bounded unit. Its report starts `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions.
+- **Outer loop.** The orchestrator runs intake, orient, plan, build, verify, ship, and report, and handles all contact with you. It gathers context first, asks one batch of questions and permission requests at plan time, then runs to the report without asking.
+- **Inner loops.** Each worker runs its own loop on one bounded unit. Its report starts `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides or parks it.
 - **Verify.** An evaluator loop: each round, a fresh `reviewer` and a `verifier` check the full diff, and findings go back to an implementer as fix briefs. At most 3 fix rounds.
-- **Limits.** Every loop has a budget and a stall rule: stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence. When a budget runs out, progress stalls, or only you can decide, the orchestrator escalates in one message: the ledger, the decision needed, the options, and a recommendation.
-- **Ledger.** The orchestrator tracks units, fix rounds, open findings, and side tickets in a ledger. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+- **Limits.** Every loop has a budget and a stall rule: stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence. After the question batch, a gap with a safe, reversible option is decided and logged. When none exists, a budget runs out, or progress stalls, the orchestrator parks the affected work, finishes the rest, and puts the question in the final report. Only a committed secret interrupts.
+- **Ledger.** The orchestrator tracks units, fix rounds, open findings, side tickets, PRs, decisions, and parked questions in a ledger. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+- **Stacked PRs.** When a session opens more than one PR into the same base, they form one stack: each PR targets the branch of the one below it. Stacks merge bottom-up with merge commits, and only when you granted merge in the question batch.
+- **Final report.** Short sections in a fixed order (what changed, verification, merge order, findings, decisions made for you, recommendations, follow-ups, open questions), each under 250 words where possible.
 
 `Claude/README.md` has the phase diagram and each worker's loop; B4 of the global file has the full contract.
 
