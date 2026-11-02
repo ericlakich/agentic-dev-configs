@@ -126,7 +126,7 @@ The workflow assumes the agent can reach the repo's ticket tracker (through an M
 | `verifier` | Read, Grep, Glob, Bash | No | Discovers gates from CI config; never invents a command; full or scoped runs; reports `FLAKY` |
 | `side-fix` | All | Yes | `isolation: worktree`, `background: true`; spawns only `reviewer` and `verifier` (prompt-enforced); if it cannot spawn, stops at ready for verify |
 
-All agents use `model: inherit`, so they run on the main session's model.
+All agents use `model: inherit`, so they run on the main session's model unless the orchestrator overrides it. Per B9 (Model choice), it passes the Agent tool's `model` parameter at spawn time: a cheaper tier for bounded, checkable work such as explorer lookups and verifier runs, and the session's model for reviewers, hard implementer units, and side-fix. A model you name in the session wins.
 
 The read-only agents have no Edit or Write tool, so the tool list blocks file edits. They keep Bash for commands like `git log` and `rg`, and only their instructions keep Bash from writing. For enforcement beyond the prompt, use a `PreToolUse` hook or Claude Code's sandbox (see the [permissions docs](https://code.claude.com/docs)). Settings-level `permissions.deny` rules apply to the whole session, not to one agent.
 

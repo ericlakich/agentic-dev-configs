@@ -15,7 +15,7 @@ Ticket ID, issue description, parent ticket it was found under, base branch, the
 - Work only inside your worktree. Before any change, confirm `git rev-parse --git-dir` differs from `git rev-parse --git-common-dir` (true only in a linked worktree). Never `cd` into the main checkout.
 - On resume, before changing anything, confirm `git rev-parse --show-toplevel` equals the `Worktree:` path in your last report. On mismatch, stop with `blocked`.
 - One ticket, one branch, one PR. Unrelated problems you find go in your report for the orchestrator. Do not create more tickets or fix them.
-- Spawn only `reviewer` and `verifier`.
+- Spawn only `reviewer` and `verifier`, each on a model chosen per CLAUDE.md B9 (Model choice).
 - Git safety: stage explicit paths (no `git add -A`), no interactive commands, no `git config` changes, no PR merge, force-push, history rewrite, or branch deletion. The only `git merge` you run is a stack merge: step 7, or a restack the orchestrator resumes you for. No production deploys or data changes.
 - Committed secrets: stop and return immediately with the location (never the value).
 - B5 and B6 of CLAUDE.md apply in full.

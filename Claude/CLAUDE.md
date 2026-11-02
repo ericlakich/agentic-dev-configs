@@ -152,7 +152,7 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 ```
 Ledger: <TICKET-ID> | branch <name> | base <branch> | phase <orient|plan|build|verify|ship|report>
 Budgets: default | <overrides>
-Units: U1 <agent> <status> <paths> id <worker-id> | U2 ...
+Units: U1 <agent> <model> <status> <paths> id <worker-id> | U2 ...
 Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
 Findings open: R3 [major] path:line, R5 [minor] ... | closed: R1, R2 | disputed: R4 <reason> | justified: R6 <reason>
 Side tickets: <ID> <status> id <worker-id> worktree <path> [fix round <n>/<budget>], or none
@@ -174,3 +174,10 @@ Defined in `~/.claude/agents/`. A repo's `.claude/agents/` file with the same `n
 | `reviewer` | Fresh-context adversarial review of a diff vs ticket and standards; severity and file:line | No | No |
 | `verifier` | Runs the repo's real gates; raw pass/fail with failure excerpts | No | No |
 | `side-fix` | A B3 issue end to end on its own ticket, branch, worktree, and PR | Yes | `reviewer`, `verifier` only |
+
+Model choice. Where the harness lets an agent choose a worker's model at spawn time (the orchestrator, and side-fix for its reviewer and verifier), choose, for each spawn, the most cost-efficient model that can still meet the unit's exit test. Weigh how hard the unit is against how costly a miss would be:
+- A cheaper tier for bounded, checkable work: a narrow explorer lookup, a verifier run, a mechanical implementer unit with strong gates.
+- The session's model, or the strongest available, where a miss is costly or hard to catch: every reviewer, design-heavy or cross-cutting implementer units, and side-fix.
+- Cost never buys a skipped check: every result still meets its exit test and the verify loop. After a `partial` or stall that looks like a capability limit, the one re-brief may move up a tier, never down.
+- A model I name in the session, or one a repo's agent override sets, wins. Where the harness cannot choose per spawn, each agent runs on its configured model.
+- Record each choice on the ledger's `Units` line.
