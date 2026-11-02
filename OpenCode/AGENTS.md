@@ -22,10 +22,12 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
 
 ## Part B: Development workflow
 
-### B0. Main session vs subagent
-- The main session is the orchestrator. Ticket creation, spawning subagents, committing, and shipping (B2 to B4) are its duties.
-- Running as a subagent: your agent definition sets your role and limits. Part A, B5, B6, and the committed-secrets rule in B3 still apply; B5's commit rules apply to whoever commits. Do not create tickets, spawn agents, commit, or ship unless your definition says to.
-- A subagent cannot ask me directly. When A1 says "ask", stop and return the question to the orchestrator as an open question.
+### B0. Orchestrator and workers
+- The orchestrator owns the outer loop (B4) and every decision that crosses units: ticket, plan, dispatch, commits, routing findings, side issues, shipping, and all contact with me. It runs as the main session, a primary agent (select it with the `agent_cycle` keybind, Tab by default; start with `opencode --agent orchestrator`; or set `"default_agent": "orchestrator"` in a personal config that `OPENCODE_CONFIG` points at); its definition is `~/.config/opencode/agents/orchestrator.md`.
+- Plain session (a main session not running as the orchestrator agent): read `~/.config/opencode/agents/orchestrator.md` and follow its body for any code change.
+- Workers are the subagents in B9. Each runs an inner loop (B4) on one bounded unit and returns a status plus evidence.
+- Running as a worker: your agent definition sets your role and limits. Part A, B4, B5, B6, and the committed-secrets rule in B3 still apply; B5's commit rules apply to whoever commits. Do not create tickets, spawn agents, commit, or ship unless your definition says to.
+- A worker cannot ask me directly. When A1 says "ask", stop and return `needs-input` with the question; only the orchestrator asks.
 
 ### B1. Session start
 - If a project workflow skill covers this repo (A3), load it before touching code.
@@ -49,7 +51,7 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
 
 ### B3. Unrelated issues found mid-task
 - Do not fold them into the current branch. One ticket, one PR.
-- Create a ticket for the issue without asking (B2 rules), note which ticket you found it under, then spawn the `side-fix` subagent to handle it end to end: its own `<TICKET-ID>/<slug>` branch from the correct base, fix, gates, PR. It runs in a separate git worktree that you create first, so it never touches the main branch's working tree. Spawn `side-fix` with `background: true` when `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` is set (without it, `background: true` errors); otherwise spawn it in the foreground and the main task pauses until it returns. Pass it the repo's B2 conventions and the worktree's absolute path, the remote, the base, and the base SHA in the brief.
+- Create a ticket for the issue without asking (B2 rules), note which ticket you found it under, then spawn the `side-fix` subagent to handle it in its own scaled-down loop (B4): its own `<TICKET-ID>/<slug>` branch from the correct base, fix, gates. It runs in a separate git worktree that you create first, so it never touches the main branch's working tree. Spawn `side-fix` with `background: true` when `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` is set (without it, `background: true` errors); otherwise spawn it in the foreground and the main task pauses until it returns. Pass it the repo's B2 conventions and the worktree's absolute path, the remote, the base, and the base SHA in the brief.
   - Before spawning `side-fix`, create a linked worktree inside the repo:
     ```
     cd "$(git rev-parse --show-toplevel)"
@@ -61,17 +63,37 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
   - If `git check-ignore -q .worktrees/` fails, first run `echo .worktrees/ >> "$(git rev-parse --git-path info/exclude)"` (local only; works when the main checkout is itself a linked worktree; never edit the repo's `.gitignore` for this).
   - The worktree stays until I remove it after merge (`git worktree remove .worktrees/<TICKET-ID>`).
   - For GitHub Issues the ID part is `issue-<n>` (branch `issue-<n>/<slug>`, worktree `.worktrees/issue-<n>`), matching B2.
+  - Verify and ship: side-fix cannot spawn agents (B9), so it stops at ready for verify; its report starts `Status: done after <n> passes: ready for verify`. Run its verify loop on its worktree (orchestrator Side loops): each round, a fresh `reviewer` and a `verifier`, each given the worktree path, branch, and HEAD SHA; at most 3 fix rounds (B4). Send findings back by resuming side-fix with its `task_id` (B4); it fixes them in the same worktree and returns ready for verify again. Once the verify exit test passes, push its branch (`git -C <worktree> push -u <remote> HEAD`), open the PR, move the ticket to its review state, and link ticket and PR both ways.
 - Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: open its PR first, ask me to merge it or stack the main branch on it, and record the ordering constraint in both PRs under "Risk and rollout".
 - Committed secrets: stop and flag immediately. That is a rotation, not a cleanup.
 - Report every side ticket and PR in the final summary (B7).
 
-### B4. Workflow: orient, plan, build, verify, ship, report
-- **Orient.** Use `explorer` subagents for codebase research. Keep the main session's context for coordination.
-- **Plan.** For anything beyond a trivial fix (one file, obvious change, no contract impact), write a short plan: scope, files, approach, tests, risks, open questions. Ask the open questions in one batch. Do not start building with a material question unresolved.
-- **Build.** Decompose into independent units, one `implementer` per unit, each with a precise brief: goal, files in scope, constraints, gate commands, definition of done, what to report back, and which other units are in flight. Run independent units in parallel only when their file scopes do not overlap; serialize the rest. Subagents do not expand scope; they report what they notice. The main session reviews each unit's diff and commits it.
-- **Verify.** Mandatory and separate from build; starts after all build units finish. Spawn `reviewer` subagents with fresh context that did not write the code. Give them the diff, the ticket, and the standards. They check correctness, standards conformance, test coverage, edge cases, security, and contract impact. Spawn a `verifier` to run the repo's real gates: build, tests, lint, type check. Fix findings, then re-verify.
-- **Ship.** Per B2.
-- **Report.** Per B7.
+### B4. Agentic loops
+A loop gathers context, acts, checks against ground truth, and decides, until an exit test passes, a budget runs out, progress stalls, or input is needed. Ground truth is outside the model: command output, a test result, file content, a verdict from an agent that did not write the code. Never your own belief that you are done.
+- **Contract.** Every loop, outer or inner, has a goal (one sentence), an exit test (the observable condition that means done), evidence (the ground truth checked on every pass), a budget (max passes), a stall rule, and an exit state.
+- **Exit states.** The first line of every worker report is `Status: <state> after <n> passes: <one-line reason>`. A report without that line counts as `partial`.
+  - `done`: exit test passed; evidence attached.
+  - `partial`: stopped on budget or stall; say which, what passed, and what remains.
+  - `blocked`: needs a change outside your scope or authority (other files, design, environment, permission).
+  - `needs-input`: a question only I can answer (A1). Workers return it; only the orchestrator asks.
+- **Default budgets.** A brief or I may override them; the orchestrator names any override in the ledger (B8).
+  - explorer: at most 3 widening rounds per question.
+  - implementer: at most 3 fix attempts on any one failing check.
+  - Verify loop (the orchestrator's, including the one it runs for side-fix, B3): at most 3 fix rounds after the first verify. The count does not reset after a re-plan.
+  - Re-brief of the same worker for the same goal after `partial`: once (narrow the goal or split the unit), then escalate. A fresh spawn after a stall counts as that one re-brief; never chain fresh spawns.
+  - Re-plan: once per ticket without asking. A second re-plan, or any re-plan that changes scope or a public contract, comes to me.
+- **Stall rule.** Stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence (no new finding, no diff change, no new information). Never repeat an identical action expecting a different result. In the verify loop the stricter Phase 4 rule wins: a finding still open after its fix, or a gate failing the same way after its fix, stops it.
+- **Flaky.** A check that changes result with no code change is flaky. Re-run it once to confirm, then report it as flaky. Never loop on it, and never count a flaky pass as a pass.
+- **Escalation.** The orchestrator sends me one message (A1 batch rules) on: `needs-input` (collected, and sent once no unparked unit is still running); outer budget exhausted; outer stall; a scope or public-contract change; a standards conflict (A3); a hard-rail event (committed secret, production action); a pre-existing or flaky gate failure (whether to ship with it); any `blocked` only I can clear. The message holds the current ledger, the decision needed, the options, and a recommendation.
+- **Resume vs fresh.** Resume the same worker (it keeps its context) for its own unit: a fix pass, a narrowed goal, integration feedback. To resume, pass the `task_id` from its earlier result (`<task id="ses_..." ...>`) to the `task` tool; it continues the same child session with its history. An unknown ID silently starts a fresh session, so pass the exact ID. Spawn fresh when independence matters (every reviewer round) or when the worker stalled (its context is polluted; that spawn is the one re-brief). If a worker cannot be resumed, re-spawn it with its prior report and the findings in the brief.
+- **Outer loop.** The orchestrator runs these phases; `~/.config/opencode/agents/orchestrator.md` holds each phase's exit test, decision rules, and back-edges.
+  0. Intake: not a code change -> answer under Part A; a PR review -> the `pr-review` skill; a code change -> the loop.
+  1. Orient: `explorer`s map the code; tracker and candidate tickets (B2), workflow skill, standards, and real gates (B1).
+  2. Plan: units with disjoint file scopes, each with an exit test and gates; one question batch; then the ticket resolved (B2) and its branch.
+  3. Build: one `implementer` per unit; the orchestrator reads each diff and commits it.
+  4. Verify: a fresh `reviewer` and a `verifier` each round; findings return as fix briefs.
+  5. Ship: per B2.
+  6. Report: per B7.
 
 ### B5. Thoroughness means
 - Read before editing. Trace callers and consumers of anything you change.
@@ -93,26 +115,40 @@ Ticket: <TICKET-ID> (Project: ...)
 Branch: <TICKET-ID>/slug | PR: <link> | Base: <branch>
 What changed: 2 to 4 lines, behavior first
 Verified: <commands run> -> <results>; anything not run and why
-Side tickets: <TICKET-ID> (PR link), or none
+Loops: fix rounds <n>/<budget>; escalations: <list or none>
+Side tickets: <TICKET-ID> (PR link, or in progress with its worktree path and branch), or none
 Open questions / follow-ups: ..., or none
 ```
 
 ### B8. Context and session hygiene
 - One ticket per session. Do not carry a session across unrelated tickets.
-- Before any long step, write a short state block (ticket, branch, done, remaining, blockers) so the work survives a context reset.
 - Keep `AGENTS.md` files short. Long references live in their own files, listed under `instructions` in `opencode.json`.
 - Prefer `explorer` subagents over loading large parts of the codebase into the main context.
+- The orchestrator keeps a ledger and re-posts it at every phase change, after every verify round, before any long step, and in every escalation. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker's `task_id` (`ses_...`) from its `task` result, to resume it by; a side ticket shows `fix round` only while the orchestrator runs its verify loop.
 
-### B9. Standing subagents
-Defined in `~/.config/opencode/agents/`. A repo's `.opencode/agents/` file with the same name overrides the user-level one for that repo. The override merges field by field: keys the repo file omits keep their user-level values, and `permission` maps merge rather than replace.
+```
+Ledger: <TICKET-ID> | branch <name> | base <branch> | phase <orient|plan|build|verify|ship|report>
+Budgets: default | <overrides>
+Units: U1 <agent> <status> <paths> id <worker-id> | U2 ...
+Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
+Findings open: R3 [major] path:line, R5 [minor] ... | closed: R1, R2 | disputed: R4 <reason>
+Side tickets: <ID> <status> id <worker-id> [fix round <n>/<budget>], or none
+Waiting on: <user|agent|nothing>: <what>
+Next: <one action>
+```
+
+### B9. Standing agents
+Defined in `~/.config/opencode/agents/`. A repo's `.opencode/agents/` file with the same name overrides the user-level one for that repo. The override merges field by field: keys the repo file omits keep their user-level values, and `permission` maps merge rather than replace. `orchestrator` runs as the main thread, a primary agent (B0); the other five are its workers.
 
 | Agent | Use for | Can edit | Spawns agents |
 |---|---|---|---|
+| `orchestrator` | Main thread only: the outer loop (B4), ticket, plan, dispatch, commits, finding routing, ship, report | No product code; git state, ticket and PR text only | All five workers |
 | `explorer` | Read-only research: file map, snippets, findings, gates, conventions | No | No |
 | `implementer` | One unit of work, in-scope files only; diff summary plus out-of-scope notes | Yes, in scope | No |
 | `reviewer` | Fresh-context adversarial review of a diff vs ticket and standards; severity and file:line | No | No |
 | `verifier` | Runs the repo's real gates; raw pass/fail with failure excerpts | No | No |
-| `side-fix` | A B3 issue end to end on its own ticket, branch, worktree, and PR | Yes | `reviewer`, `verifier` only |
+| `side-fix` | A B3 issue end to end on its own ticket, branch, worktree, and PR | Yes | No (orchestrator verifies and ships) |
 
-- Each agent's `permission.task` controls what it may spawn. Only `side-fix` may spawn agents, and only `reviewer` and `verifier`.
-- Bash pattern maps in each agent's `permission` back up the read-only and no-commit rules. The prompts remain the primary guard.
+- Spawn a worker with the `task` tool; resume one by passing its `task_id` (B4).
+- Each agent's `permission.task` controls what it may spawn. Only `orchestrator` may spawn agents, and only the five workers. Every worker has `task: deny`, and OpenCode's default `subagent_depth` of 1 blocks nesting anyway, so side-fix cannot spawn `reviewer` or `verifier`: the orchestrator runs side-fix's verify loop and ships its PR (B3).
+- Bash pattern maps in each worker's `permission` back up the read-only and no-commit rules, and `edit: deny` keeps `orchestrator` out of the edit tools. The prompts remain the primary guard.

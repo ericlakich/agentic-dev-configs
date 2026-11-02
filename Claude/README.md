@@ -9,6 +9,7 @@ This directory is the canonical version of the workflow. The other tool director
 | File | Installs to | Purpose |
 |---|---|---|
 | `CLAUDE.md` | `~/.claude/CLAUDE.md` | Global instructions loaded into every session |
+| `agents/orchestrator.md` | `~/.claude/agents/orchestrator.md` | Main-thread agent: runs the outer loop and dispatches the workers |
 | `agents/explorer.md` | `~/.claude/agents/explorer.md` | Read-only codebase research |
 | `agents/implementer.md` | `~/.claude/agents/implementer.md` | Builds one scoped unit of work |
 | `agents/reviewer.md` | `~/.claude/agents/reviewer.md` | Fresh-context adversarial diff review |
@@ -40,25 +41,69 @@ This repo is public. With the directory linked, anything written to `~/.claude/a
 
 Start a new session to pick up changes. To confirm an agent loaded, invoke it, for example by asking for the `explorer` subagent.
 
+## Run the orchestrator
+
+The orchestrator is a main-thread agent: it becomes the main session, not a subagent you spawn. Start each development session with:
+
+```bash
+claude --agent orchestrator
+```
+
+For a repo where every session is development work, set it in that repo's `.claude/settings.local.json` instead:
+
+```json
+{ "agent": "orchestrator" }
+```
+
+The `--agent` flag overrides the setting. Do not set `agent` in your user-level `~/.claude/settings.json`. The agent's body replaces Claude Code's default system prompt, including its tool guidance and safety instructions, so a user-level setting would replace it in every session, including non-development work. That is why `orchestrator.md` carries a short "Operating rules" section. `CLAUDE.md` still loads.
+
+A plain session follows the same loop: CLAUDE.md B0 tells a main session not running as the orchestrator to read `~/.claude/agents/orchestrator.md` and follow its body for any code change.
+
+Unverified: how the desktop app and IDE extensions handle the `agent` setting. It is not documented.
+
 ## How it works
 
 `CLAUDE.md` has two parts:
 
 - **Part A (everywhere):** no guessing (ask in one early batch), concise replies, and a precedence order: your instruction in the session, then a project workflow skill, then this file.
-- **Part B (development):** every change gets a ticket, a `<TICKET-ID>/<slug>` branch, and a PR. The main session orchestrates and delegates:
+- **Part B (development):** every change gets a ticket, a `<TICKET-ID>/<slug>` branch, and a PR. The work runs as agentic loops (B4): gather context, act, check against ground truth, decide. A loop repeats until its exit test passes, its budget runs out, progress stalls, or it needs your input. Ground truth is outside the model: command output, test results, file content, or a verdict from an agent that did not write the code.
+
+The orchestrator runs the outer loop:
 
 ```
-orient      explorer          map the code, find the real gates
-plan        main session      scope, files, risks, one batch of questions
-build       implementer x N   one per independent unit, parallel when file scopes don't overlap
-            main session      review each unit's diff and commit it
-verify      reviewer          fresh-context review of the diff
-            verifier          run build, tests, lint, type check exactly as CI does
-ship        main session      push, PR, move the ticket, link both ways, stop
-report      main session      fixed B7 format
+intake -> orient -> plan -> build -> verify -> ship -> report
+           ^  |      ^ ^     | ^      |  |
+           +--+      | +-----+ +------+  |
+                     +-------------------+
 
-side issue  side-fix          own ticket, branch, worktree, and PR, in the background
+orient -> orient   unknowns get one re-brief, then go into the question batch
+build  -> plan     a blocked unit whose fix fits the plan: re-plan
+verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
+verify -> plan     a design-level finding: re-plan
+any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change,
+                   a pre-existing or flaky gate failure
 ```
+
+Each phase hands bounded units to workers, and each worker runs its own inner loop:
+
+```
+intake      orchestrator      not code: answer; PR review: pr-review skill; code change: orient
+orient      orchestrator      searches the tracker for candidate tickets; loads the workflow skill
+            explorer x N      code, standards, real gates; search, read, check; at most 3 widening rounds
+plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions;
+                              then the ticket (match or new) and its branch
+build       implementer x N   red, green, check; at most 3 attempts per failing check
+            orchestrator      read each unit's diff and commit it
+verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
+            verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
+ship        orchestrator      push, PR, move the ticket, link both ways, stop
+report      orchestrator      fixed B7 format
+
+side issue  side-fix          own ticket, branch, worktree, and PR; scaled-down loop, 3 fix rounds, background
+                              cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
+```
+
+Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, side tickets, and your decisions. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
 
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
 
@@ -68,15 +113,32 @@ The workflow assumes the agent can reach the repo's ticket tracker (through an M
 
 | Agent | Tools | Edits | Notes |
 |---|---|---|---|
+| `orchestrator` | All (no `tools` field) | No product code; git state, ticket and PR text | Main thread only; spawns the five workers and never edits files (both prompt-enforced) |
 | `explorer` | Read, Grep, Glob, Bash, WebFetch, WebSearch | No | Returns a file map and findings tagged verified or inferred |
 | `implementer` | All except Agent | In-scope files only | Tests first; leaves changes uncommitted for the orchestrator |
-| `reviewer` | Read, Grep, Glob, Bash, WebFetch | No | Verdict plus findings by severity with `path:line` |
-| `verifier` | Read, Grep, Glob, Bash | No | Discovers gates from CI config; never invents a command |
-| `side-fix` | All | Yes | `isolation: worktree`, `background: true`; spawns only `reviewer` and `verifier` (prompt-enforced) |
+| `reviewer` | Read, Grep, Glob, Bash, WebFetch | No | Fresh every round; verdict plus findings with stable IDs, severity, and `path:line` |
+| `verifier` | Read, Grep, Glob, Bash | No | Discovers gates from CI config; never invents a command; full or scoped runs; reports `FLAKY` |
+| `side-fix` | All | Yes | `isolation: worktree`, `background: true`; spawns only `reviewer` and `verifier` (prompt-enforced); if it cannot spawn, stops at ready for verify |
 
 All agents use `model: inherit`, so they run on the main session's model.
 
 The read-only agents have no Edit or Write tool, so the tool list blocks file edits. They keep Bash for commands like `git log` and `rg`, and only their instructions keep Bash from writing. For enforcement beyond the prompt, use a `PreToolUse` hook or Claude Code's sandbox (see the [permissions docs](https://code.claude.com/docs)). Settings-level `permissions.deny` rules apply to the whole session, not to one agent.
+
+Subagents load `~/.claude/CLAUDE.md` by default, so every worker sees the B4 loop contract. They can spawn subagents up to a default depth of 3 (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`), so orchestrator, then side-fix, then `reviewer` or `verifier` fits.
+
+Unverified: whether a resumed `isolation: worktree` subagent keeps its worktree, and whether a fresh one could take over an existing side-fix branch (git does not check out a branch that another worktree holds). So the orchestrator resumes side-fix and never re-spawns it fresh while its worktree exists, and side-fix confirms its worktree path on every resume.
+
+Loop budgets (B4) are enforced by instructions only. Claude Code's `maxTurns` agent field is an optional hard budget that stops an agent after that many turns; in v2.1.246 or later its output is also marked partial. These files do not set it.
+
+### Optional: a hard spawn allowlist
+
+`orchestrator.md` has no `tools` field, so its spawn limits and its "no product-code edits" rule are prompt-enforced. To enforce the spawn limit, add this line to its frontmatter, with your own tracker's MCP server:
+
+```yaml
+tools: Agent(explorer, implementer, reviewer, verifier, side-fix), Read, Grep, Glob, Bash, Skill, AskUserQuestion, SendMessage, mcp__<tracker-server>__*
+```
+
+The cost: any `tools` list drops every MCP tool it does not name (`mcp__<server>` or `mcp__<server>__*`; no `mcp__*` wildcard is documented), so the tracker and every other MCP server you rely on must be listed. Bash can still write files, so "no product-code edits" stays partly prompt-enforced. The `Agent(...)` list is honored only on a main-thread agent; inside a subagent definition it is ignored.
 
 ## Skills
 
@@ -88,3 +150,4 @@ The read-only agents have no Edit or Write tool, so the tool list blocks file ed
 
 - A repo's `CLAUDE.md` adds project rules on top of this one. If the two conflict and the A3 order doesn't settle it, the agent stops and asks.
 - A repo's `.claude/agents/<name>.md` with the same `name` replaces the user-level agent for that repo.
+- A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
