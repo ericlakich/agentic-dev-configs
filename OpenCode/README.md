@@ -79,7 +79,7 @@ A plain session follows the same loop: AGENTS.md B0 tells a main session not run
 
 `AGENTS.md` has two parts:
 
-- **Part A (everywhere):** no guessing (ask in one early batch), concise replies, and a precedence order: your instruction in the session, then a project workflow skill, then this file.
+- **Part A (everywhere):** no guessing (gather context, then ask questions and permissions in one early batch), concise replies, and a precedence order: your instruction in the session, then a project workflow skill, then this file.
 - **Part B (development):** every change gets a ticket, a `<TICKET-ID>/<slug>` branch, and a PR. The work runs as agentic loops (B4): gather context, act, check against ground truth, decide. A loop repeats until its exit test passes, its budget runs out, progress stalls, or it needs your input. Ground truth is outside the model: command output, test results, file content, or a verdict from an agent that did not write the code.
 
 The orchestrator runs the outer loop:
@@ -91,11 +91,12 @@ intake -> orient -> plan -> build -> verify -> ship -> report
                      +-------------------+
 
 orient -> orient   unknowns get one re-brief, then go into the question batch
+plan   -> you      the one question batch: questions, permissions, expected forks; then no questions until the report
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
 verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
 verify -> plan     a design-level finding: re-plan
-any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change,
-                   a pre-existing or flaky gate failure
+any    -> park     no safe option, exhausted budget, or stall: park the affected units, finish the rest,
+                   and ask in the report (B4 Autonomy); a safe, reversible gap is decided and logged
 ```
 
 Each phase hands bounded units to workers, and each worker runs its own inner loop:
@@ -104,24 +105,31 @@ Each phase hands bounded units to workers, and each worker runs its own inner lo
 intake      orchestrator      not code: answer; PR review: pr-review skill; code change: orient
 orient      explorer x N      search, read, check; at most 3 widening rounds per question
             orchestrator      tracker and candidate tickets, workflow skill, standards, real gates
-plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions;
+plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions and permissions;
                               then the ticket (match or new) and its branch
 build       implementer x N   red, green, check; at most 3 attempts per failing check
             orchestrator      read each unit's diff and commit it
 verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
-ship        orchestrator      push, PR, move the ticket, link both ways, stop
-report      orchestrator      fixed B7 format
+ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
+                              merge bottom-up only if the batch granted it
+report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, and worktree; scaled-down loop to ready for verify; background when enabled
             orchestrator      side-fix's verify loop (fresh reviewer every round, 3 fix rounds), then its PR
 ```
 
-Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs (`task_id`), fix rounds, findings, and side tickets. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs (`task_id`), fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
+
+You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom and the main PR on top, opened only after every side-fix has ended. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
+
+The question batch covers workflow permissions (merge, deploys, new dependencies). OpenCode's own permission prompts are separate: a run still pauses on every `ask` rule, such as the `"*": ask` fallback in the explorer and reviewer bash maps, `"git -C *": ask` in side-fix's, and anything your global `permission` config sets to `ask`. For an unattended run, allow the commands and tools the workflow uses (`git`, `gh`, your tracker's tools) under `permission` in your global `opencode.json`, and keep the B6 rails. An agent's own map is applied after your global rules, so its `ask` entries still prompt (see Known gaps); a repo override of that agent can change them (Per-repo overrides).
 
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
 
-The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 stops and asks.
+The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 asks in the question batch.
+
+Model choice (B9) falls back to configured models here. The `task` tool takes no model argument: a subagent runs on the `model` in its agent file (`provider/model-id`) or, when that is omitted, on the calling agent's model, and a resume by `task_id` recomputes the model the same way. These files omit `model`, so every worker runs on the orchestrator's model. To run a worker on a cheaper or stronger model, set `model` in a personal or repo override of that agent. ([source][src]: `tool/task.ts:43-62`, `tool/task.ts:136`, `tool/task.ts:181-209`; [agents](https://opencode.ai/docs/agents/))
 
 Loop budgets (B4) are enforced by instructions only. OpenCode's `steps` agent field is an optional hard cap on an agent's agentic iterations, after which it must answer in text; these files do not set it. ([source][src]: `packages/core/src/v1/config/agent.ts:34-37`)
 
@@ -142,8 +150,8 @@ Loop budgets (B4) are enforced by instructions only. OpenCode's `steps` agent fi
 | Read-only enforcement | Instructions only; Bash kept | `edit: deny` plus a bash map (`"*": ask`, read-only commands allowed) on explorer and reviewer. Verifier's bash map only denies commit, push, checkout, switch, stash, reset, rebase, merge, restore, and clean, so it can still run builds and tests; its prompt is the main guard |
 | Background | `background: true` in frontmatter | Per call, `task` with `background: true`; needs `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` |
 | Worktree isolation | `isolation: worktree` | Not documented; the orchestrator creates `.worktrees/<TICKET-ID>` before spawning `side-fix` (B3) |
-| Nested subagents | side-fix spawns `reviewer` and `verifier` | None: `subagent_depth` defaults to 1, and every worker has `task: deny`. side-fix stops at ready for verify; the orchestrator runs its verify loop and ships its PR (B3) |
-| Model selection | `model: inherit` | `model` omitted, so subagents use the caller's model |
+| Nested subagents | side-fix spawns `reviewer` and `verifier` | None: `subagent_depth` defaults to 1, and every worker has `task: deny`. side-fix stops at ready for verify; the orchestrator runs its verify loop, stacks its branch, and ships its PR (B3) |
+| Model selection | `model: inherit`; the orchestrator picks per spawn with the Agent tool's `model` parameter (B9) | `model` omitted, so subagents use the caller's model; no per-spawn choice (B9) |
 
 ## Known gaps
 
@@ -169,6 +177,6 @@ Paths cited after a "source" link in this README are relative to `packages/openc
 
 ## Per-repo overrides
 
-- A repo's `AGENTS.md` (or `CLAUDE.md` if there is no `AGENTS.md`) adds project rules on top of this one. OpenCode loads the global file, then the project file(s), then each `instructions` entry in `opencode.json`, and combines them. If they conflict and the A3 order doesn't settle it, the agent stops and asks. ([rules](https://opencode.ai/docs/rules/))
+- A repo's `AGENTS.md` (or `CLAUDE.md` if there is no `AGENTS.md`) adds project rules on top of this one. OpenCode loads the global file, then the project file(s), then each `instructions` entry in `opencode.json`, and combines them. If they conflict and the A3 order doesn't settle it, the agent asks in the question batch, or parks the conflict after it. ([rules](https://opencode.ai/docs/rules/))
 - A repo's `.opencode/agents/<name>.md` adds agents for that repo. One with the same name as a user-level agent overrides it for that repo, field by field, with `permission` maps merged (see Known gaps).
 - A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.

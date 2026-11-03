@@ -19,7 +19,7 @@ User-level configuration for AI coding agents, one directory per tool. Each dire
 
 The global instructions file has two parts.
 
-**Part A** applies to every task: never guess (ask in one early batch), keep replies short, separate verified from inferred, and follow a fixed precedence (your instruction in the session, then a project workflow skill, then the global file).
+**Part A** applies to every task: never guess (gather context, then ask questions and permissions in one early batch), keep replies short, separate verified from inferred, and follow a fixed precedence (your instruction in the session, then a project workflow skill, then the global file).
 
 **Part B** is the development workflow. Every change gets a ticket, a `<TICKET-ID>/<slug>` branch, and a PR. The work runs as agentic loops: gather context, act, check against ground truth (command output, test results, or a verdict from an agent that did not write the code), and decide. A loop repeats until its exit test passes, its budget runs out, progress stalls, or it needs your input.
 
@@ -32,17 +32,20 @@ The global instructions file has two parts.
 | `verifier` | Runs build, tests, lint, and type check exactly as CI does; reports raw results | No |
 | `side-fix` | Takes an unrelated issue found mid-task to its own ticket, branch, and PR without touching the main working tree | Yes |
 
-- **Outer loop.** The orchestrator runs intake, orient, plan, build, verify, ship, and report, and handles all contact with you.
-- **Inner loops.** Each worker runs its own loop on one bounded unit. Its report starts `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions.
+- **Outer loop.** The orchestrator runs intake, orient, plan, build, verify, ship, and report, and handles all contact with you. It gathers context first, asks one batch of questions and permission requests at plan time, then runs to the report without asking.
+- **Inner loops.** Each worker runs its own loop on one bounded unit. Its report starts `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides or parks it.
 - **Verify.** An evaluator loop: each round, a fresh `reviewer` and a `verifier` check the full diff, and findings go back to an implementer as fix briefs. At most 3 fix rounds.
-- **Limits.** Every loop has a budget and a stall rule: stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence. When a budget runs out, progress stalls, or only you can decide, the orchestrator escalates in one message: the ledger, the decision needed, the options, and a recommendation.
-- **Ledger.** The orchestrator tracks units, fix rounds, open findings, and side tickets in a ledger. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+- **Limits.** Every loop has a budget and a stall rule: stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence. After the question batch, a gap with a safe, reversible option is decided and logged. When none exists, a budget runs out, or progress stalls, the orchestrator parks the affected work, finishes the rest, and puts the question in the final report. Only a committed secret interrupts.
+- **Ledger.** The orchestrator tracks units, fix rounds, open findings, side tickets, PRs, decisions, and parked questions in a ledger. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
+- **Stacked PRs.** When a session opens more than one PR into the same base, they form one stack: each PR targets the branch of the one below it. Side fixes sit below the main PR, which opens only after every side-fix has ended. Stacks merge bottom-up with merge commits, and only when you granted merge.
+- **Model choice.** Where a tool lets the orchestrator pick a subagent's model per spawn, it picks the most cost-efficient model that can still meet the unit's exit test: a cheaper tier for bounded, checkable work, the strongest for reviewers and hard units. Every result still passes the same checks.
+- **Final report.** Short sections in a fixed order (what changed, verification, merge order, findings, decisions made for you, recommendations, follow-ups, open questions), each under 250 words where possible.
 
 `Claude/README.md` has the phase diagram and each worker's loop; B4 of the global file has the full contract.
 
 Hard rails hold for every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, and no production changes without an explicit go-ahead.
 
-The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 stops and asks.
+The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 asks in the question batch.
 
 ## Skills
 
@@ -70,6 +73,7 @@ Section numbers, rules, agent roles, loop contracts, and report formats match ac
 | Orchestrator form | Main-thread agent (`claude --agent orchestrator`) | Part C of the global file | Part C of the global file | Part C of the global file | Agent file (`copilot --agent orchestrator`) | `mode: primary` agent (`opencode --agent orchestrator`) |
 | Hard spawn allowlist on the orchestrator | Opt-in, orchestrator only: `tools` line; drops unlisted MCP tools | No (instructions only) | No (instructions only) | Opt-in, session-wide: `agents.overrides.<name>.enabled: false` | Opt-in, session-wide: `subagents.disabledSubagents` | Yes (`permission.task`) |
 | Resume a worker with its context | Yes (`SendMessage`) | Yes (V1 `send_input`, V2 `followup_task`) | Yes (agent ID) | No (re-spawn) | Finished worker: not documented, re-spawn; `write_agent` messages a running one | Yes (`task_id`) |
+| Pick a subagent's model per spawn | Yes (Agent tool `model`) | Yes (`spawn_agent` `model`, an exact slug; a role file's `model` wins) | Partly: the parent can name a model at launch (parameter and precedence unverified) | No (agent file or `agents.overrides`) | No (agent file or `/subagents`) | No (agent file, else the caller's model) |
 
 Five fallbacks cover the gaps:
 
@@ -97,7 +101,7 @@ Expect hunks only here:
 - B0: the line that says where the orchestrator runs and is defined, and the plain-session line. Codex also changes the worker line.
 - B3: the side-fix bullet.
 - B4: the "Resume vs fresh" line, the "Outer loop" pointer line, and, where side-fix can't spawn (Codex, Gemini, OpenCode), the verify-budget line.
-- B9: the intro line, the tool notes, and in some ports the `orchestrator` and `side-fix` rows. In Part C ports, the last hunk combines B9's changes with the `## Part C` heading.
+- B9: the intro line, the tool notes, in some ports the `orchestrator` and `side-fix` rows, and, where side-fix can't spawn or can't pick a model (Codex, Copilot, Gemini, OpenCode), the Model choice intro line. In Part C ports, the last hunk combines B9's changes with the `## Part C` heading.
 
 Then compare the orchestrator. Part C ports hold it at the end of the global file; Copilot and OpenCode have an agent file:
 
@@ -127,5 +131,6 @@ Diff the workers and skills file by file the same way, for example `diff Claude/
 
 ## Notes
 
+- The question batch covers workflow permissions (merge, deploys, new dependencies), not each tool's own approval prompts. For an unattended run, pre-allow the commands the workflow uses (`git`, `gh`, your tracker's tools) in the tool's permission settings.
 - This repo is public. Never commit auth files, API keys, or a copy of a tool's home directory. With symlinked installs, anything a tool writes into a linked directory lands in this working tree, so check `git status` before committing.
 - The tool facts behind each port were checked against official docs and source in October 2026. These tools change quickly. If an agent or skill stops loading, check the port's Known gaps and the tool's current docs first.

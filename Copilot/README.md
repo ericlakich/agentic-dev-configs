@@ -75,7 +75,7 @@ Unverified: whether the personal `~/.copilot/copilot-instructions.md` loads for 
 
 `copilot-instructions.md` has two parts:
 
-- **Part A (everywhere):** no guessing (ask in one early batch), concise replies, and a precedence order: your instruction in the session, then a project workflow skill, then this file.
+- **Part A (everywhere):** no guessing (gather context, then ask questions and permissions in one early batch), concise replies, and a precedence order: your instruction in the session, then a project workflow skill, then this file.
 - **Part B (development):** every change gets a ticket, a `<TICKET-ID>/<slug>` branch, and a PR. The work runs as agentic loops (B4): gather context, act, check against ground truth, decide. A loop repeats until its exit test passes, its budget runs out, progress stalls, or it needs your input. Ground truth is outside the model: command output, test results, file content, or a verdict from an agent that did not write the code.
 
 The orchestrator runs the outer loop:
@@ -87,11 +87,12 @@ intake -> orient -> plan -> build -> verify -> ship -> report
                      +-------------------+
 
 orient -> orient   unknowns get one re-brief, then go into the question batch
+plan   -> you      the one question batch: questions, permissions, expected forks; then no questions until the report
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
 verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
 verify -> plan     a design-level finding: re-plan
-any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change,
-                   a pre-existing or flaky gate failure
+any    -> park     no safe option, exhausted budget, or stall: park the affected units, finish the rest,
+                   and ask in the report (B4 Autonomy); a safe, reversible gap is decided and logged
 ```
 
 Each phase hands bounded units to workers, and each worker runs its own inner loop:
@@ -100,26 +101,33 @@ Each phase hands bounded units to workers, and each worker runs its own inner lo
 intake      orchestrator      not code: answer; PR review: pr-review skill; code change: orient
 orient      explorer x N      search, read, check; at most 3 widening rounds per question
             orchestrator      tracker and candidate tickets, workflow skill, standards, real gates
-plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions;
+plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions and permissions;
                               then the ticket (match or new) and its branch
 build       implementer x N   red, green, check; at most 3 attempts per failing check
             orchestrator      read each unit's diff and commit it
 verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
-ship        orchestrator      push, PR, move the ticket, link both ways, stop
-report      orchestrator      fixed B7 format
+ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
+                              merge bottom-up only if the batch granted it
+report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, and PR in a worktree the orchestrator creates; scaled-down loop, 3 fix rounds, spawned in the background
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
-Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, and side tickets. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
+
+You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom and the main PR on top, opened only after every side-fix has ended. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
+
+The question batch covers workflow permissions (merge, deploys, new dependencies). Copilot CLI's own tool approvals are separate: a run still pauses on any shell command, file write, or MCP tool you have not allowed. For an unattended run, start the session with `--allow-tool` rules for what the workflow uses, for example `copilot --agent orchestrator --allow-tool='shell(git:*),shell(gh:*),write,<tracker-mcp-server>'`, and keep the B6 rails. `--deny-tool` rules win over allow rules. Unverified: whether these rules also cover the subagents the orchestrator spawns. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference))
 
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
 
-The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 stops and asks.
+The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 asks in the question batch.
 
 Loop budgets (B4) are enforced by instructions only.
+
+Model choice (B9) falls back to configured models here. The `task` tool documents no per-spawn model argument, so the orchestrator cannot pick a cheaper or stronger model per spawn. Each agent runs on its `model` frontmatter (unset in these files, so it inherits the session's model) or on the per-agent subagent model you set with `/subagents`. To run explorer and verifier on a cheaper model, set it there or add `model:` to their agent files. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference), [custom agents configuration](https://docs.github.com/en/copilot/reference/custom-agents-configuration))
 
 ## Differences from Claude
 
@@ -136,13 +144,13 @@ Loop budgets (B4) are enforced by instructions only.
 | Background | `background: true` on side-fix | Chosen per spawn, not in the agent file; the orchestrator spawns side-fix in the background (B3, B9) |
 | Worktree isolation | `isolation: worktree` on side-fix | Per session only (`/new worktree`, `--worktree`); the orchestrator creates `.worktrees/<TICKET-ID>` for side-fix (B3) |
 | Nested subagents | side-fix spawns `reviewer` and `verifier`; if it cannot spawn, it stops at ready for verify | Same, with the same fallback; tool filters carry into nested subagents |
-| Model selection | `model: inherit` | `model` unset, so it inherits |
+| Model selection | `model: inherit`; the orchestrator picks a model per spawn with the Agent tool's `model` parameter (B9) | `model` unset, so it inherits; no documented per-spawn model, so B9 falls back to each agent's configured model (`model` frontmatter or `/subagents`) |
 
 ## Known gaps
 
 - Read-only is prompt-enforced. explorer, reviewer, and verifier have no `edit` alias, but `execute` can still write files, and verifier needs it to run builds and tests. ([custom agents configuration](https://docs.github.com/en/copilot/reference/custom-agents-configuration))
 - User agents override repo agents. A repo's `.github/agents/reviewer.agent.md` or `.claude/agents/` reviewer does not replace yours; yours wins. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference))
-- Background is per spawn. No agent-file key makes side-fix run in the background, so it does so only when the orchestrator spawns it that way. `read_agent` checks a background agent's status, and `/tasks` lists running tasks. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference))
+- Background is per spawn. No agent-file key makes side-fix run in the background, so it does so only when the orchestrator spawns it that way. `read_agent` checks a background agent's status, and `/tasks` lists running tasks. Not documented: a way to block until a background agent ends, or a notice when one does. Before the main PR opens, the orchestrator waits for every running side-fix (Phase 5) by checking it with `read_agent` or `/tasks`. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference))
 - Custom agents spawned as subagents get only the repo's instruction files (`copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`), and only through `include-custom-instructions: true`, which every agent here sets. Unverified: whether the personal `~/.copilot/copilot-instructions.md` reaches them. If it does not, subagents never see Part A, B0, or the B4 loop contract, and the workers' references to B4 and side-fix's references to B2, B5, and B6 of `copilot-instructions.md` point at nothing. Each worker's Loop section and report format still carry its own budget, stall rule, and `Status:` line. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference), [create custom agents](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/create-custom-agents-for-cli))
 - Not documented: whether the orchestrator's body replaces or adds to Copilot CLI's built-in prompt when it runs as the session agent. `orchestrator.agent.md` keeps an "Operating rules" section in case it replaces it. ([custom agents configuration](https://docs.github.com/en/copilot/reference/custom-agents-configuration), [create custom agents](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/create-custom-agents-for-cli))
 - Inferred, not verified: the personal `~/.copilot/copilot-instructions.md` loads for a `--agent` session. Repo instructions do: the CLI reference lists the session agent, including one selected with `--agent`, as receiving them. If the personal file does not load, the orchestrator never sees Part A or B, so its Operating rules tell it to read the file when Part B is missing. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference))
@@ -156,7 +164,7 @@ Loop budgets (B4) are enforced by instructions only.
 
 ## Per-repo overrides
 
-- Copilot CLI reads a repo's `.github/copilot-instructions.md`, `.github/instructions/**`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and `.claude/rules`, at the root, the cwd, the directories in between, and nested paths. They are combined with this file and de-duplicated, with no general precedence order. If they conflict and the A3 order doesn't settle it, the agent stops and asks. ([custom instructions](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions))
+- Copilot CLI reads a repo's `.github/copilot-instructions.md`, `.github/instructions/**`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and `.claude/rules`, at the root, the cwd, the directories in between, and nested paths. They are combined with this file and de-duplicated, with no general precedence order. If they conflict and the A3 order doesn't settle it, the agent asks in the question batch, or parks the conflict after it. ([custom instructions](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions))
 - `/instructions` toggles individual files; `--no-custom-instructions` skips them all.
 - A repo's `.github/agents/<name>.agent.md` or `.claude/agents/` agent does not replace the user-level agent with the same ID. The user-level agent wins, then `.github/agents/`, then `.claude/agents/`. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference))
 - A repo agent that stands in for a worker (it loads only where you have no user-level agent with that ID) must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.

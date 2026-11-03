@@ -68,9 +68,9 @@ Never put an orchestrator file in `agents/`: every `*.md` there registers as a s
 
 `GEMINI.md` has three parts:
 
-- **Part A (everywhere):** no guessing (ask in one early batch), concise replies, and a precedence order: your instruction in the session, then a project workflow skill, then this file.
+- **Part A (everywhere):** no guessing (gather context, then ask questions and permissions in one early batch), concise replies, and a precedence order: your instruction in the session, then a project workflow skill, then this file.
 - **Part B (development):** every change gets a ticket, a `<TICKET-ID>/<slug>` branch, and a PR. The work runs as agentic loops (B4): gather context, act, check against ground truth, decide. A loop repeats until its exit test passes, its budget runs out, progress stalls, or it needs your input. Ground truth is outside the model: command output, test results, file content, or a verdict from an agent that did not write the code.
-- **Part C (orchestrator):** the main session's outer loop, phase by phase, plus the unit brief template, ledger, escalation, and side loops. Workers ignore it.
+- **Part C (orchestrator):** the main session's outer loop, phase by phase, plus the unit brief template, ledger, autonomy, and side loops. Workers ignore it.
 
 The orchestrator runs the outer loop:
 
@@ -81,11 +81,12 @@ intake -> orient -> plan -> build -> verify -> ship -> report
                      +-------------------+
 
 orient -> orient   unknowns get one re-brief, then go into the question batch
+plan   -> you      the one question batch: questions, permissions, expected forks; then no questions until the report
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
 verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
 verify -> plan     a design-level finding: re-plan
-any    -> you      one escalation (B4): needs-input, exhausted budget, stall, scope or contract change,
-                   a pre-existing or flaky gate failure
+any    -> park     no safe option, exhausted budget, or stall: park the affected units, finish the rest,
+                   and ask in the report (B4 Autonomy); a safe, reversible gap is decided and logged
 ```
 
 Each phase hands bounded units to workers, and each worker runs its own inner loop:
@@ -94,26 +95,31 @@ Each phase hands bounded units to workers, and each worker runs its own inner lo
 intake      orchestrator      not code: answer; PR review: pr-review skill; code change: orient
 orient      explorer x N      search, read, check; at most 3 widening rounds per question
             orchestrator      tracker and candidate tickets, workflow skill, standards, real gates
-plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions;
+plan        orchestrator      units with disjoint file scopes, exit tests, gates; one batch of questions and permissions;
                               then the ticket (match or new) and its branch
 build       implementer x N   red, green, check; at most 3 attempts per failing check
             orchestrator      read each unit's diff and commit it
 verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
-ship        orchestrator      push, PR, move the ticket, link both ways, stop
-report      orchestrator      fixed B7 format
+ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
+                              merge bottom-up only if the batch granted it
+report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, and worktree; scaled-down loop to ready for verify; foreground
             orchestrator      side-fix's verify loop (3 fix rounds, fresh reviewer each), then its PR
 ```
 
-Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator batches the questions. The orchestrator keeps a ledger (B8) of budgets, units, fix rounds, findings, and side tickets; it has no worker IDs, because workers cannot be resumed. It re-posts the ledger at every phase change and rebuilds from it after a context reset.
+Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions; it has no worker IDs, because workers cannot be resumed. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
 
 A worker cannot be resumed, so a fix pass re-spawns it with its prior report and the findings in the brief (B4).
 
+You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom and the main PR on top, opened only after every side-fix has ended. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first. The orchestrator ships side-fix's PR too, so it stacks that PR onto the top side PR when it opens it.
+
+The question batch covers workflow permissions (merge, deploys, new dependencies). Gemini CLI's own tool approvals are separate: in the default approval mode a run still pauses for confirmation on tool calls you have not allowed. For an unattended run, allow the commands the workflow uses in `~/.gemini/settings.json` (`"tools": {"allowed": ["run_shell_command(git)", "run_shell_command(gh)"]}`) and mark your tracker's MCP server `"trust": true` under `mcpServers`, rather than `--approval-mode=yolo`, and keep the B6 rails. [Configuration](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md)
+
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
 
-The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 stops and asks.
+The workflow assumes the agent can reach the repo's ticket tracker (through an MCP server or CLI) and the git host's CLI for PRs. Without tracker access, B2 asks in the question batch.
 
 ## Differences from Claude
 
@@ -144,6 +150,8 @@ Per-agent frontmatter. "Read set" is `read_file`, `read_many_files`, `grep_searc
 
 The defaults are 30 turns and 10 minutes. Full test suites and whole tickets outrun them, so implementer, verifier, and side-fix get more. The implementer and side-fix lists are explicit so they exclude `ask_user`: subagents return `needs-input` to the orchestrator (B0). Both keep `activate_skill` and `mcp_*`, so they can load a workflow skill and reach the tracker and git host, as in Claude.
 
+Model choice (B9) falls back to configured models. `invoke_agent` takes only `agent_name` and `prompt`, so the orchestrator cannot pick a model per spawn, and every agent here runs on the main session's model (`model` omitted means `inherit`). To put one agent on a cheaper tier, set `model` in its agent file, or `modelConfig.model` under `agents.overrides.<name>` in `~/.gemini/settings.json`; that applies to every spawn of that agent. [agent-tool.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/agent-tool.ts#L59-L72), [Subagents](https://geminicli.com/docs/core/subagents/)
+
 Back-to-back subagent calls in one turn run in parallel, so B4's parallel build units work as in Claude. [scheduler.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/scheduler/scheduler.ts)
 
 ## Known gaps
@@ -162,7 +170,7 @@ Back-to-back subagent calls in one turn run in parallel, so B4's parallel build 
 
 ## Per-repo overrides
 
-- A repo's `GEMINI.md` files (workspace dirs and their parents up to `.git`, plus files loaded just in time when a tool touches a directory) are concatenated with this one. If the two conflict and the A3 order doesn't settle it, the agent stops and asks. [GEMINI.md](https://geminicli.com/docs/cli/gemini-md/)
+- A repo's `GEMINI.md` files (workspace dirs and their parents up to `.git`, plus files loaded just in time when a tool touches a directory) are concatenated with this one. If the two conflict and the A3 order doesn't settle it, the agent asks in the question batch, or parks the conflict after it. [GEMINI.md](https://geminicli.com/docs/cli/gemini-md/)
 - `CLAUDE.md` is not read by default; B1 tells the agent to read `AGENTS.md` and `CLAUDE.md` itself. To load other names automatically, set `context.fileName` in `~/.gemini/settings.json`, for example `["AGENTS.md","GEMINI.md"]`. Each name is also looked up in `~/.gemini/`.
 - A repo's `.gemini/agents/<name>.md` with the same `name` takes precedence over the user-level agent (trusted folders only, after you acknowledge the agent). [registry.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/agents/registry.ts)
 - A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
