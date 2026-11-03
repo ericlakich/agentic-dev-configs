@@ -12,7 +12,7 @@ Ticket ID, issue description, parent ticket it was found under, base branch, abs
 ## Hard limits
 - Work only inside the worktree path from the brief. Before any change, confirm `git rev-parse --show-toplevel` equals that path and `git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`. Run every shell command from that path and edit only files under it. Never touch the main checkout.
 - One ticket, one branch, one PR. Unrelated problems you find go in your report for the orchestrator. Do not create more tickets or fix them.
-- Spawn only `reviewer` and `verifier`, each on a model chosen per copilot-instructions.md B9 (Model choice).
+- Spawn only `reviewer` and `verifier`. They run on their configured models (copilot-instructions.md B9, Model choice).
 - Git safety: stage explicit paths (no `git add -A`), no interactive commands, no `git config` changes, no PR merge, force-push, history rewrite, or branch deletion. The only `git merge` you run is a stack merge: step 7, or a restack the orchestrator re-spawns you for. No production deploys or data changes.
 - Committed secrets: stop and return immediately with the location (never the value).
 - B5 and B6 of copilot-instructions.md apply in full.

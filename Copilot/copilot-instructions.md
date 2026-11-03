@@ -184,7 +184,7 @@ Defined in `~/.copilot/agents/` as `<name>.agent.md`. Repo agents live in `.gith
 
 - Spawn a worker with the `task` tool; resume one per B4 "Resume vs fresh". Background is chosen per spawn, not in the agent file: spawn `side-fix` in the background. There is no per-agent worktree isolation (B3).
 
-Model choice. Where the harness lets an agent choose a worker's model at spawn time (the orchestrator, and side-fix for its reviewer and verifier), choose, for each spawn, the most cost-efficient model that can still meet the unit's exit test. Weigh how hard the unit is against how costly a miss would be:
+Model choice. Where the harness lets an agent choose a worker's model at spawn time (the orchestrator), choose, for each spawn, the most cost-efficient model that can still meet the unit's exit test. Weigh how hard the unit is against how costly a miss would be:
 - A cheaper tier for bounded, checkable work: a narrow explorer lookup, a verifier run, a mechanical implementer unit with strong gates.
 - The session's model, or the strongest available, where a miss is costly or hard to catch: every reviewer, design-heavy or cross-cutting implementer units, and side-fix.
 - Cost never buys a skipped check: every result still meets its exit test and the verify loop. After a `partial` or stall that looks like a capability limit, the one re-brief may move up a tier, never down.
