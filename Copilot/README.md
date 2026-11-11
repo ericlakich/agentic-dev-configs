@@ -91,8 +91,8 @@ orient -> orient   unknowns get one re-brief, then go into the question batch
 plan   -> you      the one question batch: questions, permissions, expected forks; then no questions until the report
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
 verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
-verify -> build    once review passes, adversarial findings become fix briefs too; at most 3 more fix rounds;
-                   the PR is ready only with the adversarial's approval, otherwise it ships as a draft
+verify -> build    once review passes, adversarial findings become fix briefs too; from its first pass, every round
+                   counts against its budget of 3; the PR is ready only with its approval, otherwise it ships as a draft
 verify -> plan     a design-level finding: re-plan
 any    -> park     no safe option, exhausted budget, or stall: park the affected units, finish the rest,
                    and ask in the report (B4 Autonomy); a safe, reversible gap is decided and logged
@@ -111,12 +111,12 @@ build       implementer x N   red, green, check; at most 3 attempts per failing 
 verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
             adversarial       last, once review passes; fresh every pass; findings S1, S2, ... with exploit paths;
-                              local throwaway PoCs only; at most 3 fix rounds; the PR is ready only on its approval
+                              local throwaway PoCs only; at most 3 rounds; the PR is ready only on its approval
 ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
-side issue  side-fix          own ticket, branch, and PR in a worktree the orchestrator creates; scaled-down loop with its own adversarial pass, 3 fix rounds each, spawned in the background
+side issue  side-fix          own ticket, branch, and PR in a worktree the orchestrator creates; scaled-down loop with its own adversarial pass, 3 rounds each, spawned in the background
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
@@ -153,7 +153,7 @@ Model choice (B9) falls back to configured models here. The `task` tool document
 
 ## Known gaps
 
-- Read-only is prompt-enforced. explorer, reviewer, verifier, and adversarial have no `edit` alias, but `execute` can still write files, and verifier needs it to run builds and tests. adversarial keeps `execute` to run throwaway PoCs in a temp dir outside the repo, so its "no repo edits" and "local targets only" limits rest on the prompt. ([custom agents configuration](https://docs.github.com/en/copilot/reference/custom-agents-configuration))
+- Read-only is prompt-enforced. explorer, reviewer, verifier, and adversarial have no `edit` alias, but `execute` can still write files, and verifier needs it to run builds and tests. adversarial keeps `execute` to run throwaway PoCs in a temp dir outside the repo, so its "no repo edits", "local targets only", and scrubbed-environment limits rest on the prompt. PR and ticket text cite its findings by ID, severity, and `path:line` only. ([custom agents configuration](https://docs.github.com/en/copilot/reference/custom-agents-configuration))
 - User agents override repo agents. A repo's `.github/agents/reviewer.agent.md` or `.claude/agents/` reviewer does not replace yours; yours wins. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference))
 - Background is per spawn. No agent-file key makes side-fix run in the background, so it does so only when the orchestrator spawns it that way. `read_agent` checks a background agent's status, and `/tasks` lists running tasks. Not documented: a way to block until a background agent ends, or a notice when one does. Before the main PR opens, the orchestrator waits for every running side-fix (Phase 5) by checking it with `read_agent` or `/tasks`. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference))
 - Custom agents spawned as subagents get only the repo's instruction files (`copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`), and only through `include-custom-instructions: true`, which every agent here sets. Unverified: whether the personal `~/.copilot/copilot-instructions.md` reaches them. If it does not, subagents never see Part A, B0, or the B4 loop contract, and the workers' references to B4 and side-fix's references to B2, B5, and B6 of `copilot-instructions.md` point at nothing. Each worker's Loop section and report format still carry its own budget, stall rule, and `Status:` line. ([CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference), [create custom agents](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/create-custom-agents-for-cli))
