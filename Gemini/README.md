@@ -85,8 +85,8 @@ orient -> orient   unknowns get one re-brief, then go into the question batch
 plan   -> you      the one question batch: questions, permissions, expected forks; then no questions until the report
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
 verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
-verify -> build    once review passes, adversarial findings become fix briefs too; at most 3 more fix rounds;
-                   the PR is ready only with the adversarial's approval, otherwise it ships as a draft
+verify -> build    once review passes, adversarial findings become fix briefs too; from its first pass, every round
+                   counts against its budget of 3; the PR is ready only with its approval, otherwise it ships as a draft
 verify -> plan     a design-level finding: re-plan
 any    -> park     no safe option, exhausted budget, or stall: park the affected units, finish the rest,
                    and ask in the report (B4 Autonomy); a safe, reversible gap is decided and logged
@@ -105,14 +105,14 @@ build       implementer x N   red, green, check; at most 3 attempts per failing 
 verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
             adversarial       last, once review passes; fresh every pass; findings S1, S2, ... with exploit paths;
-                              local throwaway PoCs only; at most 3 fix rounds; the PR is ready only on its approval
+                              local throwaway PoCs only; at most 3 rounds; the PR is ready only on its approval
 ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, and worktree; scaled-down loop to ready for verify; foreground
             orchestrator      side-fix's verify loop (3 fix rounds, fresh reviewer each),
-                              then its adversarial pass (3 fix rounds), then its PR
+                              then its adversarial pass (3 rounds), then its PR
 ```
 
 Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions; it has no worker IDs, because workers cannot be resumed. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
@@ -173,7 +173,7 @@ Back-to-back subagent calls in one turn run in parallel, so B4's parallel build 
 - No per-agent worktree. B3 has the orchestrator create one under `.worktrees/`. Session-level worktrees exist (`gemini --worktree <name>` with `experimental.worktrees: true`, default `false`, created under `.gemini/worktrees/`) but cover a whole session, not one agent. [Subagents](https://geminicli.com/docs/core/subagents/)
 - File tools skip git-ignored paths (`context.fileFiltering.respectGitIgnore`, default `true`, which also honors `.git/info/exclude`). `read_file` rejects them; `glob`, `read_many_files`, and `list_directory` omit them. `.worktrees/` is excluded, so B3 and side-fix read there with `run_shell_command`. (`pr-review` never checks out the PR, so it reads everything through git.) `write_file` and `replace` only check workspace access, so edits work. Alternative: set `"context": {"fileFiltering": {"respectGitIgnore": false}}` in `~/.gemini/settings.json`; file tools then also see other ignored files, such as `node_modules`. [read-file.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/tools/read-file.ts), [fileDiscoveryService.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/services/fileDiscoveryService.ts)
 - Gates that don't read git excludes (some lint and test globs) can pick up files under `.worktrees/` while a side-fix worktree exists.
-- Read-only is prompt-enforced. explorer, reviewer, adversarial, and verifier have no edit tools but keep `run_shell_command`, which can write; verifier needs it for builds and tests, and adversarial for throwaway PoCs in a temp dir outside the repo (prompt-enforced). For a hard limit, add policy TOML in `~/.gemini/policies/` with `subagent = "<name>"`. None ships here because priority semantics are unverified. [Policy engine](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/policy-engine.md)
+- Read-only is prompt-enforced. explorer, reviewer, adversarial, and verifier have no edit tools but keep `run_shell_command`, which can write; verifier needs it for builds and tests, and adversarial for throwaway PoCs in a temp dir outside the repo, with a scrubbed environment (prompt-enforced); PR and ticket text cite its findings by ID, severity, and `path:line` only. For a hard limit, add policy TOML in `~/.gemini/policies/` with `subagent = "<name>"`. None ships here because priority semantics are unverified. [Policy engine](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/policy-engine.md)
 
 ## Per-repo overrides
 
