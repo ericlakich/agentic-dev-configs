@@ -66,7 +66,7 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
   - If `git check-ignore -q .worktrees/` fails, first run `echo .worktrees/ >> "$(git rev-parse --git-path info/exclude)"` (local only; works when the main checkout is itself a linked worktree; never edit the repo's `.gitignore` for this).
   - The worktree stays until I remove it after merge (`git worktree remove .worktrees/<TICKET-ID>`).
   - For GitHub Issues the ID part is `issue-<n>` (branch `issue-<n>/<slug>`, worktree `.worktrees/issue-<n>`), matching B2.
-  - Verify and ship: side-fix cannot spawn agents (B9), so it stops at ready for verify; its report starts `Status: done after <n> passes: ready for verify`. Run its verify loop on its worktree (orchestrator Side loops): each round, a fresh `reviewer` and a `verifier`, each given the worktree path, branch, and HEAD SHA; at most 3 fix rounds (B4). Send findings back by resuming side-fix with its `task_id` (B4); it fixes them in the same worktree and returns ready for verify again. If the loop ends on budget or stall, park it with no PR (side PRs never ship as drafts). Once the verify exit test passes, stack it (B2): if the session has open side PRs into the same base, fetch, merge the top one's branch into its branch (`git -C <worktree> merge <remote>/<branch>`), and run a verifier on the new HEAD; a conflict goes back to side-fix by resume, and it resolves it inside its ticket's scope; then run a verifier and a fresh `reviewer` on its new HEAD. Then push its branch (`git -C <worktree> push -u <remote> HEAD`), open the PR against that branch (or the base), move the ticket to its review state, and link ticket and PR both ways.
+  - Verify and ship: side-fix cannot spawn agents (B9), so it stops at ready for verify; its report starts `Status: done after <n> passes: ready for verify`. Run its verify loop on its worktree (orchestrator Side loops): each round, a fresh `reviewer` and a `verifier`, each given the worktree path, branch, and HEAD SHA; at most 3 fix rounds (B4); then the adversarial pass (Phase 4), with its budget and stall rule. Send findings back by resuming side-fix with its `task_id` (B4); it fixes them in the same worktree and returns ready for verify again. If either loop ends on budget or stall, park it with no PR (side PRs never ship as drafts). Once the review exit test passes and the adversarial approves, stack it (B2): if the session has open side PRs into the same base, fetch, merge the top one's branch into its branch (`git -C <worktree> merge <remote>/<branch>`), and run a verifier on the new HEAD; a conflict goes back to side-fix by resume, and it resolves it inside its ticket's scope; then run a verifier, a fresh `reviewer`, and then a fresh `adversarial` on its new HEAD, with their findings in the same loops (budgets do not reset). A clean merge keeps the adversarial's `approve`. Only once the review exit test and an adversarial `approve` hold on the merged HEAD, push its branch (`git -C <worktree> push -u <remote> HEAD`), open the PR against that branch (or the base), move the ticket to its review state, and link ticket and PR both ways.
 - Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch once its PR is open, at the first point with no unit in flight and a clean tree. Units that need it, and the next verify round, wait for that merge. Record the ordering in both PRs under "Risk and rollout".
 - Committed secrets: stop and flag immediately. That is a rotation, not a cleanup.
 - Report every side ticket and PR in the final summary (B7).
@@ -83,7 +83,7 @@ A loop gathers context, acts, checks against ground truth, and decides, until an
   - explorer: at most 3 widening rounds per question.
   - implementer: at most 3 fix attempts on any one failing check.
   - Verify loop (the orchestrator's, including the one it runs for side-fix, B3): at most 3 fix rounds after the first verify. The count does not reset after a re-plan.
-  - Adversarial loop (the last stage of the orchestrator's verify loop, including the one it runs for side-fix, B3): at most 3 fix rounds after its first pass, counted apart from the verify loop's. The count does not reset after a re-plan. On budget or stall, the main PR ships as a draft and is never marked ready or merged; a side fix is parked with no PR.
+  - Adversarial loop (the last stage of the orchestrator's verify loop, including the one it runs for side-fix, B3): at most 3 rounds. From its first pass on, every round counts here, not against the verify loop: one set of committed fixes (`R` or `S`) with the checks that follow it, or one adversarial re-pass with no fixes before it. The count does not reset after a re-plan. Stall: an `S` finding still open after its fix, or the same one disputed or justified twice and rejected both times. On budget or stall, the main PR ships as a draft and is never marked ready or merged; a side fix is parked with no PR.
   - Re-brief of the same worker for the same goal after `partial`: once (narrow the goal or split the unit), then park the unit (Autonomy). A fresh spawn after a stall counts as that one re-brief; never chain fresh spawns.
   - Re-plan: once per ticket. A second re-plan, or any re-plan that changes scope or a public contract, is parked (Autonomy).
 - **Stall rule.** Stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence (no new finding, no diff change, no new information). Never repeat an identical action expecting a different result. In the verify loop the stricter Phase 4 rule wins: a finding still open after its fix, or a gate failing the same way after its fix, stops it.
@@ -130,7 +130,7 @@ Project: ... | Branch: <branch> | PR: <link> | Base: <branch the stack merges in
 ### Verification
 - <command> -> <result>; anything not run and why
 - Fix rounds <n>/<budget>
-- Adversarial <approve|request changes> @ <short sha>; fix rounds <n>/<budget>
+- Adversarial <approve|request changes|pending> @ <short sha>; rounds <n>/<budget>
 
 ### Merge order (two or more PRs)
 | # | PR | Branch | Targets | Depends on | Status |
@@ -142,7 +142,7 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 
 ### Findings
 - Review and adversarial findings fixed, justified, or disputed: one line each, with the reason
-- Pre-existing problems found, with their side tickets
+- Pre-existing problems found, with their side tickets (a pre-existing `S` finding on a public repo: parked, with a private-advisory recommendation)
 
 ### Decisions made for you
 - Each `self` decision: the gap, the option taken, why it was safe
@@ -161,15 +161,15 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 - One ticket per session. Do not carry a session across unrelated tickets.
 - Keep `AGENTS.md` files short. Long references live in their own files, listed under `instructions` in `opencode.json`.
 - Prefer `explorer` subagents over loading large parts of the codebase into the main context.
-- The orchestrator keeps a ledger and re-posts it at every phase change except into the report, after every verify round, and before any long step. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker's `task_id` (`ses_...`) from its `task` result, to resume it by; `Adversarial` holds the last adversarial verdict (`pending` before its first pass), its fix rounds, and the SHA it attacked; a side ticket shows `fix round` and `adversarial round` only while the orchestrator runs its verify loop. `PRs` lists the session's PRs bottom-up, one stack per base (B2). `Decisions` records my batch answers and permissions (`me`) and each decision made for me after the batch (`self`, with the reason). `Parked` holds the questions for the report (B4, Autonomy).
+- The orchestrator keeps a ledger and re-posts it at every phase change except into the report, after every verify round, and before any long step. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker's `task_id` (`ses_...`) from its `task` result, to resume it by; `Adversarial` holds the last adversarial verdict (`pending` before its first pass), its rounds, and the SHA it attacked (plus the merge SHA when an `approve` carries across a clean stack merge); a side ticket shows `fix round` and `adversarial round` only while the orchestrator runs its verify loop. `PRs` lists the session's PRs bottom-up, one stack per base (B2). `Decisions` records my batch answers and permissions (`me`) and each decision made for me after the batch (`self`, with the reason). `Parked` holds the questions for the report (B4, Autonomy).
 
 ```
 Ledger: <TICKET-ID> | branch <name> | base <branch> | phase <orient|plan|build|verify|ship|report>
 Budgets: default | <overrides>
 Units: U1 <agent> <model> <status> <paths> id <worker-id> | U2 ...
 Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
-Adversarial: fix round <n>/<budget> | verdict <approve|request changes|pending> @ <short sha>
-Findings open: R3 [major] path:line, S2 [blocker] path:line, R5 [minor] ... | closed: R1, R2, S1 | disputed: R4 <reason>
+Adversarial: round <n>/<budget> | verdict <approve|request changes|pending> @ <short sha> [carried to <merge sha>]
+Findings open: R3 [major] path:line, S2 [blocker] path:line, R5 [minor] ... | closed: R1, R2, S1 | disputed: R4 <reason> | justified: R6 <reason>
 Side tickets: <ID> <status> id <worker-id> worktree <path> [fix round <n>/<budget>, adversarial round <n>/<budget>], or none
 PRs: 1 <link> <branch> -> <base> <open|draft: why|merged> | 2 <link> <branch> -> <branch of 1> ..., or none
 Decisions: <what> -> <answer> (me | self: <reason>), or none

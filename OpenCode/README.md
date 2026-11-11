@@ -95,8 +95,8 @@ orient -> orient   unknowns get one re-brief, then go into the question batch
 plan   -> you      the one question batch: questions, permissions, expected forks; then no questions until the report
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
 verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
-verify -> build    once review passes, adversarial findings become fix briefs too; at most 3 more fix rounds;
-                   the PR is ready only with the adversarial's approval, otherwise it ships as a draft
+verify -> build    once review passes, adversarial findings become fix briefs too; from its first pass, every round
+                   counts against its budget of 3; the PR is ready only with its approval, otherwise it ships as a draft
 verify -> plan     a design-level finding: re-plan
 any    -> park     no safe option, exhausted budget, or stall: park the affected units, finish the rest,
                    and ask in the report (B4 Autonomy); a safe, reversible gap is decided and logged
@@ -115,13 +115,13 @@ build       implementer x N   red, green, check; at most 3 attempts per failing 
 verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
             adversarial       last, once review passes; fresh every pass; findings S1, S2, ... with exploit paths;
-                              throwaway PoCs only (runs prompt for approval); at most 3 fix rounds; the PR is ready only on its approval
+                              local throwaway PoCs only (outside the allowlist they prompt); at most 3 rounds; the PR is ready only on its approval
 ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, and worktree; scaled-down loop to ready for verify; background when enabled
-            orchestrator      side-fix's verify loop (fresh reviewer every round, 3 fix rounds, then its own adversarial pass, 3 fix rounds), then its PR
+            orchestrator      side-fix's verify loop (fresh reviewer every round, 3 fix rounds, then its own adversarial pass, 3 rounds), then its PR
 ```
 
 Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs (`task_id`), fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
@@ -174,7 +174,7 @@ Paths cited after a "source" link in this README are relative to `packages/openc
 - Background subagents are experimental. They need `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` and are a per-call choice with no frontmatter field. ([CLI](https://opencode.ai/docs/cli/); source: `task.ts`) A background worker notifies the caller when it completes, so the orchestrator never polls; calling `task` with the `task_id` of one still running queues a new prompt into it, so the orchestrator never does that to check status. ([source][src]: `tool/task.ts:58-60`, `tool/task.ts:267-282`)
 - Unknown frontmatter keys are passed to the model provider as request options, so Claude's `disallowedTools`, `isolation`, and `background` stay out of these files. `tools` is a recognized but deprecated field; these files use `permission` instead. `model` is omitted rather than set to Claude's `inherit`. ([agents](https://opencode.ai/docs/agents/))
 - Bash patterns are a backstop, not a sandbox. OpenCode splits a compound command into simple commands and checks each one against the patterns, with `*` matching anything and a trailing ` *` also matching the bare command. So `cat a > b` still matches `"cat *"`, and `"git merge*"` would also match `git merge-base`. That is why the maps deny `"git merge"` and `"git merge *"` instead. The last matching rule wins, which is why `"*": ask` comes first in the explorer, reviewer, and adversarial maps. ([agents](https://opencode.ai/docs/agents/); source: `util/wildcard.ts`)
-- The adversarial agent's proof-of-concept runs fall under the `"*": ask` fallback, so each prompts for approval; only `mktemp -d*` (to make the temp dir outside the repo) is allowed. `edit: deny` blocks the edit tools, so it writes PoC scripts through bash, and "temp dir outside the repo, local targets only" is prompt-enforced; the permission prompt is the human check.
+- The adversarial agent's bash map starts from the reviewer's: `"*": ask` first, then the read-only allowlist, so PoC scripts and any command outside it prompt for approval; the last matching rule wins. `mktemp -d*` is allowed so it can make its temp dir outside the repo. `find` with `-exec`, `-execdir`, `-ok`, or `-fprint` prompts, `find` with `-delete` is denied, and `git` with `--output` prompts (it would write a file). The `find` patterns have no path token, so `find -exec ...` with no path is covered too. `edit: deny` blocks the edit tools, so it writes PoC scripts through bash; "temp dir outside the repo, local targets only, scrubbed environment" is prompt-enforced, and each permission prompt is the human check. The reviewer's map still has the pathless `find` gap (its patterns need a path token); it is outside this change.
 - An agent's bash map is applied after your global `permission` rules, so an agent-level `"*": allow` would re-allow commands you deny globally. The implementer, verifier, and side-fix maps hold only deny and ask entries. Bash is allowed by default, so they behave the same when you have no global rules.
 - A repo agent with the same name as a user-level one overrides it field by field instead of replacing it. OpenCode loads the global config dir first, then `.opencode` dirs, and merges agents with `mergeDeep`, so keys the repo file omits keep their user-level values and `permission` maps merge. (source: `config/paths.ts`, `config.ts`)
 
