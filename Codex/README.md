@@ -93,7 +93,8 @@ verify      reviewer          fresh every round; findings R1, R2, ... marked clo
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
             adversarial       last, once review passes; fresh every pass; findings S1, S2, ... with exploit paths;
                               local throwaway PoCs only; at most 3 rounds; the PR is ready only on its approval
-ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
+ship        orchestrator      push, PR (stacked when there is more than one; every stack merge gets a verifier and a fresh
+                              adversarial before it ships), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
@@ -135,7 +136,7 @@ Not used by this port: hooks (`~/.codex/hooks.json` or `[hooks]` in `config.toml
 
 Source links point at openai/codex commit `11da6b9` (2026-10-07).
 
-- No tool restriction per role. `explorer`, `reviewer`, `verifier`, and `adversarial` are read-only by instruction only (`adversarial` may write throwaway PoCs in a temp dir outside the repo, against local targets only, with a scrubbed environment; PR and ticket text cite its findings by ID, severity, and `path:line` only). Turning off `shell_tool` under `[features]` would also block `rg` and `git`, so these roles leave it on. ([source][src])
+- No tool restriction per role. `explorer`, `reviewer`, `verifier`, and `adversarial` are read-only by instruction only (`adversarial` may write throwaway PoCs in a temp dir outside the repo, against local targets only, with a scrubbed environment; PR text, ticket text, branch names, and commit messages cite its findings by ID, severity, and `path:line` only). Turning off `shell_tool` under `[features]` would also block `rg` and `git`, so these roles leave it on. ([source][src])
 - Role files ignore `sandbox_mode`, `approval_policy`, and `mcp_servers`, even though the docs list them. Children inherit the parent's sandbox, approval policy, working directory, and permissions. These files set none of those keys. ([source][src])
 - In the default workspace-write sandbox, `.git` is read-only ([`permissions.rs`][permissions]). B3's fetch, `worktree add`, and the exclude append need approval, and so do Phase 4's base-check worktree, every side-fix commit, and the stack merges in Phase 5 and Side loops. With `approval_policy = "never"`, side-fix cannot commit.
 - No per-agent worktree. Worktrees exist only per session: the Codex app keeps managed worktrees under `$CODEX_HOME/worktrees`, and the CLI `--worktree` flag starts a session in a new one. B3 has the orchestrator create the side-fix worktree instead. ([docs][docs])
