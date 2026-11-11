@@ -71,7 +71,7 @@ A loop gathers context, acts, checks against ground truth, and decides, until an
   - explorer: at most 3 widening rounds per question.
   - implementer: at most 3 fix attempts on any one failing check.
   - Verify loop (the orchestrator's, side-fix's own, or the one the orchestrator runs for side-fix): at most 3 fix rounds after the first verify. The count does not reset after a re-plan.
-  - Adversarial loop (the last stage of every verify loop: the orchestrator's, side-fix's own, or the one the orchestrator runs for side-fix): at most 3 fix rounds after its first pass, counted apart from the verify loop's. The count does not reset after a re-plan. On budget or stall, the main PR ships as a draft and is never marked ready or merged; a side fix is parked with no PR.
+  - Adversarial loop (the last stage of every verify loop: the orchestrator's, side-fix's own, or the one the orchestrator runs for side-fix): at most 3 rounds. From its first pass on, every round counts here, not against the verify loop: one set of committed fixes (`R` or `S`) with the checks that follow it, or one adversarial re-pass with no fixes before it. The count does not reset after a re-plan. Stall: an `S` finding still open after its fix, or the same one disputed or justified twice and rejected both times. On budget or stall, the main PR ships as a draft and is never marked ready or merged; a side fix is parked with no PR.
   - Re-brief of the same worker for the same goal after `partial`: once (narrow the goal or split the unit), then park the unit (Autonomy). A fresh spawn after a stall counts as that one re-brief; never chain fresh spawns.
   - Re-plan: once per ticket. A second re-plan, or any re-plan that changes scope or a public contract, is parked (Autonomy).
 - **Stall rule.** Stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence (no new finding, no diff change, no new information). Never repeat an identical action expecting a different result. In the verify loop the stricter Phase 4 rule wins: a finding still open after its fix, or a gate failing the same way after its fix, stops it.
@@ -118,7 +118,7 @@ Project: ... | Branch: <branch> | PR: <link> | Base: <branch the stack merges in
 ### Verification
 - <command> -> <result>; anything not run and why
 - Fix rounds <n>/<budget>
-- Adversarial <approve|request changes> @ <short sha>; fix rounds <n>/<budget>
+- Adversarial <approve|request changes|pending> @ <short sha>; rounds <n>/<budget>
 
 ### Merge order (two or more PRs)
 | # | PR | Branch | Targets | Depends on | Status |
@@ -130,7 +130,7 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 
 ### Findings
 - Review and adversarial findings fixed, justified, or disputed: one line each, with the reason
-- Pre-existing problems found, with their side tickets
+- Pre-existing problems found, with their side tickets (a pre-existing `S` finding on a public repo: parked, with a private-advisory recommendation)
 
 ### Decisions made for you
 - Each `self` decision: the gap, the option taken, why it was safe
@@ -149,14 +149,14 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 - One ticket per session. Do not carry a session across unrelated tickets.
 - Keep `CLAUDE.md` files short. Long references live in their own files and get `@imported`.
 - Prefer `explorer` subagents over loading large parts of the codebase into the main context.
-- The orchestrator keeps a ledger and re-posts it at every phase change except into the report, after every verify round, and before any long step. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker ID the tool returned, to resume it by (omit it where the tool cannot resume); `Adversarial` holds the last adversarial verdict (`pending` before its first pass), its fix rounds, and the SHA it attacked; a side ticket shows `fix round` and `adversarial round` only while the orchestrator runs its verify loop. `PRs` lists the session's PRs bottom-up, one stack per base (B2). `Decisions` records my batch answers and permissions (`me`) and each decision made for me after the batch (`self`, with the reason). `Parked` holds the questions for the report (B4, Autonomy).
+- The orchestrator keeps a ledger and re-posts it at every phase change except into the report, after every verify round, and before any long step. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker ID the tool returned, to resume it by (omit it where the tool cannot resume); `Adversarial` holds the last adversarial verdict (`pending` before its first pass), its rounds, and the SHA it attacked (plus the merge SHA when an `approve` carries across a clean stack merge); a side ticket shows `fix round` and `adversarial round` only while the orchestrator runs its verify loop. `PRs` lists the session's PRs bottom-up, one stack per base (B2). `Decisions` records my batch answers and permissions (`me`) and each decision made for me after the batch (`self`, with the reason). `Parked` holds the questions for the report (B4, Autonomy).
 
 ```
 Ledger: <TICKET-ID> | branch <name> | base <branch> | phase <orient|plan|build|verify|ship|report>
 Budgets: default | <overrides>
 Units: U1 <agent> <model> <status> <paths> id <worker-id> | U2 ...
 Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
-Adversarial: fix round <n>/<budget> | verdict <approve|request changes|pending> @ <short sha>
+Adversarial: round <n>/<budget> | verdict <approve|request changes|pending> @ <short sha> [carried to <merge sha>]
 Findings open: R3 [major] path:line, S2 [blocker] path:line, R5 [minor] ... | closed: R1, R2, S1 | disputed: R4 <reason> | justified: R6 <reason>
 Side tickets: <ID> <status> id <worker-id> worktree <path> [fix round <n>/<budget>, adversarial round <n>/<budget>], or none
 PRs: 1 <link> <branch> -> <base> <open|draft: why|merged> | 2 <link> <branch> -> <branch of 1> ..., or none

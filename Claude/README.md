@@ -81,8 +81,8 @@ orient -> orient   unknowns get one re-brief, then go into the question batch
 plan   -> you      the one question batch: questions, permissions, expected forks; then no questions until the report
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
 verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
-verify -> build    once review passes, adversarial findings become fix briefs too; at most 3 more fix rounds;
-                   the PR is ready only with the adversarial's approval, otherwise it ships as a draft
+verify -> build    once review passes, adversarial findings become fix briefs too; from its first pass, every round
+                   counts against its budget of 3; the PR is ready only with its approval, otherwise it ships as a draft
 verify -> plan     a design-level finding: re-plan
 any    -> park     no safe option, exhausted budget, or stall: park the affected units, finish the rest,
                    and ask in the report (B4 Autonomy); a safe, reversible gap is decided and logged
@@ -101,13 +101,13 @@ build       implementer x N   red, green, check; at most 3 attempts per failing 
 verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
             adversarial       last, once review passes; fresh every pass; findings S1, S2, ... with exploit paths;
-                              local throwaway PoCs only; at most 3 fix rounds; the PR is ready only on its approval
+                              local throwaway PoCs only; at most 3 rounds; the PR is ready only on its approval
 ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, worktree, and PR; scaled-down loop with its own adversarial pass,
-                              3 fix rounds each, background
+                              3 rounds each, background
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
@@ -130,7 +130,7 @@ The workflow assumes the agent can reach the repo's ticket tracker (through an M
 | `implementer` | All except Agent | In-scope files only | Tests first; leaves changes uncommitted for the orchestrator |
 | `reviewer` | Read, Grep, Glob, Bash, WebFetch | No | Fresh every round; verdict plus findings with stable IDs, severity, and `path:line` |
 | `verifier` | Read, Grep, Glob, Bash | No | Discovers gates from CI config; never invents a command; full or scoped runs; reports `FLAKY` |
-| `adversarial` | Read, Grep, Glob, Bash, WebFetch | No | Fresh every pass; last stage of verify; verdict plus findings `S1`, `S2`, ... with exploit path and `path:line`; throwaway PoCs only in a temp dir outside the repo, against local targets only (prompt-enforced, since Bash can write) |
+| `adversarial` | Read, Grep, Glob, Bash, WebFetch | No | Fresh every pass; last stage of verify; verdict plus findings `S1`, `S2`, ... with exploit path and `path:line`; throwaway PoCs only in a temp dir outside the repo, against local targets only, with a scrubbed environment (prompt-enforced, since Bash can write); PR and ticket text cite its findings by ID, severity, and `path:line` only |
 | `side-fix` | All | Yes | `isolation: worktree`, `background: true`; spawns only `reviewer`, `verifier`, and `adversarial` (prompt-enforced); if it cannot spawn, stops at ready for verify |
 
 All agents use `model: inherit`, so they run on the main session's model unless the orchestrator overrides it. Per B9 (Model choice), it passes the Agent tool's `model` parameter at spawn time: a cheaper tier for bounded, checkable work such as explorer lookups and verifier runs, and the session's model for reviewers, the adversarial agent, hard implementer units, and side-fix. A model you name in the session wins.
@@ -152,6 +152,8 @@ tools: Agent(explorer, implementer, reviewer, verifier, adversarial, side-fix), 
 ```
 
 The cost: any `tools` list drops every MCP tool it does not name (`mcp__<server>` or `mcp__<server>__*`; no `mcp__*` wildcard is documented), so the tracker and every other MCP server you rely on must be listed. Bash can still write files, so "no product-code edits" stays partly prompt-enforced. The `Agent(...)` list is honored only on a main-thread agent; inside a subagent definition it is ignored.
+
+If you added this line before the `adversarial` agent existed, add `adversarial` to its `Agent(...)` list. Otherwise the orchestrator cannot spawn it, and every main PR parks and ships as a draft.
 
 ## Skills
 
