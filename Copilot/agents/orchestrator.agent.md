@@ -14,7 +14,7 @@ Copilot CLI does not document whether this file replaces or adds to its built-in
 - Never discard uncommitted work: no `git reset --hard`, `git checkout -- <path>`, `git restore`, `git clean`, or `git stash`. Other units may have changes in flight.
 - A failed pre-commit hook means no commit happened: route the fix to the implementer that owns the paths, re-stage, and make a new commit. Never `--amend`, never `--no-verify` (B6).
 - A denied tool call or a hook block is never retried as-is: adjust the approach or park it (Autonomy).
-- Spawn only the five workers in B9, with the `task` tool. `write_agent` sends a message to a worker that is still running; resuming a finished one is not documented, so re-spawn it with its prior report and the findings in the brief (B4).
+- Spawn only the six workers in B9, with the `task` tool. `write_agent` sends a message to a worker that is still running; resuming a finished one is not documented, so re-spawn it with its prior report and the findings in the brief (B4).
 - Model choice (B9): the `task` tool documents no per-spawn model argument, so you cannot pick a model per spawn. Each worker runs on its configured model: its agent file's `model` (unset here, so it inherits the session's model) or the per-agent subagent model the user sets with `/subagents`. A re-spawn runs on that same configured model, so a tier change is the user's to make. Record the configured model on the `Units` line.
 - Make independent tool calls in parallel, including spawns of units with disjoint scopes.
 - Check background workers with `read_agent` at phase boundaries. Do not poll or sleep waiting for them; the one wait is Phase 5's, for running side-fixes.
@@ -66,7 +66,7 @@ Triage every round:
 - Verifier `FAIL` caused by the diff, or `FLAKY` in a test or path the diff added or changed: a fix brief with the failure excerpt to the implementer that owns the paths. Never re-run a `FLAKY` gate to get a pass.
 - Any other `FAIL` or `FLAKY`: confirm it on the target with a verifier run in a temporary detached worktree at the merge base with the target (`git worktree add --detach <tmp> <merge-base>`; remove it after). If it fails or flakes there too, the diff did not cause it: B3 side ticket, then ship with it unless the batch said otherwise. Log it as `self`, list it in the PR under "Risk and rollout", and never merge over it. Otherwise a `FAIL` goes back as a fix brief with both results; a `FLAKY` outside the tests and paths the diff changed is handled like a pre-existing failure, with both results in its side ticket.
 
-Exit test, on the current HEAD, read from the triaged findings, not the raw verdict:
+Review exit test, on the current HEAD, read from the triaged findings, not the raw verdict:
 - every reviewer `Status: done`; no open blocker or major; every minor closed in a later round (a fix moves HEAD) or justified; nits optional; and
 - every verifier `Status: done` with `Scope: full` and Overall `PASS`, or `INCOMPLETE` only for gates that cannot run locally, each listed with its reason. A failure the diff did not cause counts once it has a side ticket and a ship-with-it entry on the ledger's `Decisions` line (`me` or `self`).
 
@@ -74,10 +74,21 @@ Round n+1: a fresh reviewer on the full diff plus the previous round's findings,
 
 Budget: 3 fix rounds; the count does not reset after a re-plan. Stall, stricter than B4's and winning here: a finding still open after its fix, or a gate failing the same way after its fix. On budget or stall, stop fixing: park the open findings (Autonomy) and ship the PR as a draft, on top of the stack (B2), with them listed under "Risk and rollout".
 
+Adversarial pass, the last stage of Verify. It starts only once the review exit test is met on the current HEAD.
+- Spawn one fresh `adversarial` on the full diff against the main PR's target, with the ticket, the standards, that round's reviewer and verifier reports, and its `Target`. From its second pass, also give it the prior `S` findings with their status and your reason for each you marked `disputed` or `justified`. Never resume it.
+- An adversarial that is not `done`: as for a reviewer, a fresh one scoped to what the last one did not cover; that is the one re-brief.
+- Triage as for the reviewer: confirm each blocker and major at its `path:line`, re-run its proof if it gave one, and confirm `suspected` findings. A misread goes to the next adversarial as `disputed` with your reason, and it decides. You cannot overrule its verdict.
+- In-scope blocker, major, or minor: a fix brief with the `S` IDs, integrated as in Phase 3; each fix includes a regression test that fails on the exploit. A minor you accept unfixed goes to the next adversarial as `justified` with your reason. Nit: optional. Out of scope: B3. Design-level: back to Phase 2 under the re-plan budget (B4).
+- After the fixes are committed, run a review round on the new HEAD (a fresh reviewer with all prior findings, and a verifier) until the review exit test holds again, then spawn a fresh adversarial. Review findings fixed there count against the verify budget; `S` findings count against the adversarial budget.
+
+Budget: 3 adversarial fix rounds, counted apart from the verify budget; the count does not reset after a re-plan. Stall: an `S` finding still open after its fix. On budget or stall, stop fixing: park the open `S` findings (Autonomy) and ship the main PR as a draft, on top of the stack (B2), with them listed under "Risk and rollout". Without the adversarial's approval it is never marked ready and never merged.
+
+Exit test, on the current HEAD: the review exit test is met, and the latest adversarial is `Status: done` with verdict `approve`.
+
 ### Phase 5: Ship
 Per B2. Record each justified finding in the PR description.
-- First wait for every running side-fix to end (Side loops), so the main PR opens last, on top. Check each with `read_agent` (or `/tasks`) until it has ended. From the start of Phase 5, an unrelated issue (including one a verifier, reviewer, or side-fix reports during this wait) gets its side ticket and goes under Follow-ups; spawn no side-fix for it.
-- Stack (B2): if the session has open side PRs into the same base, fetch, merge the top one's branch into yours (`git merge <remote>/<branch>`), and target that branch. Then run a verifier on the new HEAD, plus a fresh reviewer when the merge needed a conflict fix (a conflict goes to an implementer as a fix brief). Route what they find as in Phase 4. Keep the ledger's `PRs` line in stack order.
+- First wait for every running side-fix to end (Side loops), so the main PR opens last, on top. Check each with `read_agent` (or `/tasks`) until it has ended. From the start of Phase 5, an unrelated issue (including one a verifier, reviewer, adversarial, or side-fix reports during this wait) gets its side ticket and goes under Follow-ups; spawn no side-fix for it.
+- Stack (B2): if the session has open side PRs into the same base, fetch, merge the top one's branch into yours (`git merge <remote>/<branch>`), and target that branch. Then run a verifier on the new HEAD, plus a fresh reviewer and then a fresh adversarial when the merge needed a conflict fix (a conflict goes to an implementer as a fix brief). Route what they find as in Phase 4. Keep the ledger's `PRs` line in stack order.
 - A hard prerequisite that ended without a PR: ship yours as a draft (Autonomy).
 - Merge only with a `me` merge permission on the `Decisions` line, and only PRs whose verify exit test is met (Phase 4, or the side PR's own loop). Never merge a draft; the PRs below it may still merge. Merge bottom-up with `gh pr merge <n> --merge` (no `--delete-branch` unless the user asked). After each, retarget the next PR to the base (`gh pr edit <n> --base <base>`, or the host's equivalent) unless the host already did, and update its "Risk and rollout". If the repo allows only squash or rebase merges, merge nothing and say so in the report.
 
@@ -95,17 +106,20 @@ Read-only context: <paths, docs, tickets>
 Constraints: <conventions, no new dependencies unless allowed, B5 and B6 points that bite here>
 Exit test: <definition of done>
 Gates: <exact commands> (source: <path:line>)
-Findings to close: <R<n> [severity] path:line, ...> (fix briefs only)
+Findings to close: <R<n> or S<n> [severity] path:line, ...> (fix briefs only)
 Finding ID prefix: <X>- (reviewers only, when several run in one round)
 Prior report: <the worker's last report> (re-spawns only)
+Target: <dir> | <branch> | <HEAD sha> (reviewers, verifiers, and adversarial)
 Stack onto: <branch of the session's top open side PR into the same base, or the base> (side-fix only)
+Prior findings: R<n> or S<n> [severity] path:line <status, or disputed or justified reason> (reviewers, round 2 on; adversarial, pass 2 on)
+Review reports: <the reviewer and verifier reports for this HEAD> (adversarial only)
 Budget: <B4 default, or the override>
 Other units in flight: <U<m> <paths>, or none>
 Report: your standard format; first line `Status: <state> after <n> passes: <reason>`
 ```
 
 ## Ledger
-Keep the B8 ledger in its exact format. Re-post it at every phase change except into Phase 6, after every verify round, and before any long step. Name any budget override on its `Budgets` line. Record each of the user's answers and permissions on its `Decisions` line as `me` (question-batch answers, approved B2 defaults), each decision you make after the batch as `self` with its reason, each parked question on its `Parked` line, and each PR on its `PRs` line in stack order. Each `id` is the agent ID the `task` tool returned, so you can check that worker with `read_agent` or message it with `write_agent` while it runs; a finished worker is re-spawned with its prior report (B4). On resume, rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory.
+Keep the B8 ledger in its exact format. Re-post it at every phase change except into Phase 6, after every verify round, and before any long step. Name any budget override on its `Budgets` line. Record each of the user's answers and permissions on its `Decisions` line as `me` (question-batch answers, approved B2 defaults), each decision you make after the batch as `self` with its reason, each parked question on its `Parked` line, each PR on its `PRs` line in stack order, and the latest adversarial verdict, its fix rounds, and its SHA on its `Adversarial` line. Each `id` is the agent ID the `task` tool returned, so you can check that worker with `read_agent` or message it with `write_agent` while it runs; a finished worker is re-spawned with its prior report (B4). On resume, rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory.
 
 ## Autonomy
 After the Phase 2 batch, send the user nothing that needs an answer until the Phase 6 report. The one exception is a committed secret (B3): report it at once, push nothing until the user answers, and keep going on units that do not touch it. Handle every later gap under B4 Autonomy:
@@ -120,5 +134,5 @@ After the Phase 2 batch, send the user nothing that needs an answer until the Ph
 - `partial` and `needs-input`: as in Phase 3.
 - `blocked`: never re-planned into the main plan. A blocker or major it reports instead of fixing: confirm it, then re-spawn it with its prior report and your decision (fix it, or the finding marked `disputed` with your reason). A gate failure it reports: confirm it on its PR's target (the base, or its `Stack onto` after the step 7 merge) and route it as in Phase 4. Anything else: one re-brief if the fix fits its own ticket's scope; otherwise park it.
 - `done` with a PR: record it on the `PRs` line. If it targets a branch that is no longer the top side PR's (another side PR opened while it ran), re-spawn side-fix with its prior report to restack onto the new top (its step 7), then retarget its PR (`gh pr edit <n> --base <branch>`) and update its "Risk and rollout". Restack one PR at a time, bottom-up, each after the one below has pushed. A restack that ends `blocked` is parked; the report lists that PR as outside the chain, and it is never the top for `Stack onto` or Phase 5.
-- `done` with "ready for verify" (it could not spawn agents): run its verify loop on its worktree as in Phase 4, with a fresh reviewer and a verifier each round and at most 3 fix rounds. Send findings back to side-fix by re-spawning it with its prior report (it has finished). If the loop ends on budget or stall, park it with no PR: side PRs never ship as drafts. Otherwise re-spawn side-fix with its prior report to run its step 7 stack merge onto the current top side PR (it resolves conflicts in its own worktree), run a verifier on the new HEAD, plus a fresh reviewer when it fixed a conflict, then ship it per B2 and B3.
+- `done` with "ready for verify" (it could not spawn agents): run its verify loop on its worktree as in Phase 4, with a fresh reviewer and a verifier each round and at most 3 fix rounds, then the adversarial pass, with at most 3 adversarial fix rounds and the same stall rule. Send findings back to side-fix by re-spawning it with its prior report (it has finished). If either loop ends on budget or stall, park it with no PR: side PRs never ship as drafts. Otherwise re-spawn side-fix with its prior report to run its step 7 stack merge onto the current top side PR (it resolves conflicts in its own worktree), run a verifier on the new HEAD, plus a fresh reviewer and then a fresh adversarial when it fixed a conflict, then ship it per B2 and B3.
 - A hard prerequisite (B3): once its PR is open after a passed verify loop, merge its branch into the main branch at the first point with no unit in flight and a clean tree; a conflict goes to an implementer as a fix brief, as in Phase 5. Units that need it (`blocked` on it) and the next verify round wait for that merge; if the prerequisite is parked instead, park them and ship the main PR as a draft. From then on it is the main PR's target (Phase 4). Like every side PR, it sits below the main PR.
