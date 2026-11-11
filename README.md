@@ -1,6 +1,6 @@
 # agentic-dev-configs
 
-User-level configuration for AI coding agents, one directory per tool. Each directory carries the same development workflow, an orchestrator, the same five worker subagents, and the same skills, written in that tool's native format. Where a tool lacks a capability the workflow relies on, the port adapts the mechanics and keeps the rules.
+User-level configuration for AI coding agents, one directory per tool. Each directory carries the same development workflow, an orchestrator, the same six worker subagents, and the same skills, written in that tool's native format. Where a tool lacks a capability the workflow relies on, the port adapts the mechanics and keeps the rules.
 
 ## Layout
 
@@ -30,15 +30,16 @@ The global instructions file has two parts.
 | `implementer` | Builds one scoped unit, tests first; leaves the diff for the orchestrator to commit | In-scope files only |
 | `reviewer` | Fresh-context adversarial review of a diff against the ticket and standards | No |
 | `verifier` | Runs build, tests, lint, and type check exactly as CI does; reports raw results | No |
+| `adversarial` | The last stage of every verify loop: attacks the finished change for security loopholes and exploitable issues; nothing ships as ready without its approval | No |
 | `side-fix` | Takes an unrelated issue found mid-task to its own ticket, branch, and PR without touching the main working tree | Yes |
 
 - **Outer loop.** The orchestrator runs intake, orient, plan, build, verify, ship, and report, and handles all contact with you. It gathers context first, asks one batch of questions and permission requests at plan time, then runs to the report without asking.
 - **Inner loops.** Each worker runs its own loop on one bounded unit. Its report starts `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides or parks it.
-- **Verify.** An evaluator loop: each round, a fresh `reviewer` and a `verifier` check the full diff, and findings go back to an implementer as fix briefs. At most 3 fix rounds.
+- **Verify.** An evaluator loop: each round, a fresh `reviewer` and a `verifier` check the full diff, and findings go back to an implementer as fix briefs. At most 3 fix rounds. Once they pass, a fresh `adversarial` agent attacks the change for exploitable issues, and its findings go back the same way. Nothing ships as ready without its approval: if 3 adversarial fix rounds do not earn it, the main PR ships as a draft.
 - **Limits.** Every loop has a budget and a stall rule: stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence. After the question batch, a gap with a safe, reversible option is decided and logged. When none exists, a budget runs out, or progress stalls, the orchestrator parks the affected work, finishes the rest, and puts the question in the final report. Only a committed secret interrupts.
 - **Ledger.** The orchestrator tracks units, fix rounds, open findings, side tickets, PRs, decisions, and parked questions in a ledger. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
 - **Stacked PRs.** When a session opens more than one PR into the same base, they form one stack: each PR targets the branch of the one below it. Side fixes sit below the main PR, which opens only after every side-fix has ended. Stacks merge bottom-up with merge commits, and only when you granted merge.
-- **Model choice.** Where a tool lets the orchestrator pick a subagent's model per spawn, it picks the most cost-efficient model that can still meet the unit's exit test: a cheaper tier for bounded, checkable work, the strongest for reviewers and hard units. Every result still passes the same checks.
+- **Model choice.** Where a tool lets the orchestrator pick a subagent's model per spawn, it picks the most cost-efficient model that can still meet the unit's exit test: a cheaper tier for bounded, checkable work, the strongest for reviewers, the adversarial agent, and hard units. Every result still passes the same checks.
 - **Final report.** Short sections in a fixed order (what changed, verification, merge order, findings, decisions made for you, recommendations, follow-ups, open questions), each under 250 words where possible.
 
 `Claude/README.md` has the phase diagram and each worker's loop; B4 of the global file has the full contract.
@@ -66,7 +67,7 @@ Section numbers, rules, agent roles, loop contracts, and report formats match ac
 
 | Capability | Claude | Codex | Cursor | Gemini | Copilot | OpenCode |
 |---|---|---|---|---|---|---|
-| Edit tools removed from read-only agents | Yes | No (prompt only) | Partly (`readonly` on explorer and reviewer) | Yes | Yes | Yes (`permission`) |
+| Edit tools removed from read-only agents | Yes | No (prompt only) | Partly (`readonly` on explorer, reviewer, and adversarial) | Yes | Yes | Yes (`permission`) |
 | side-fix runs in the background | Yes | Yes (spawns never block) | Yes | No | Yes, per spawn | Opt-in, experimental |
 | Per-agent worktree | Yes | No | Yes, requested per spawn (worktree or cloud copy) | No | No | No |
 | A subagent can spawn subagents | Yes | V1 no, V2 yes (the port keeps spawning to the orchestrator) | One level below main | No | Yes | No by default (`subagent_depth` defaults to 1); the port does not rely on nesting |
@@ -78,7 +79,7 @@ Section numbers, rules, agent roles, loop contracts, and report formats match ac
 Five fallbacks cover the gaps:
 
 - **No per-agent worktree (Codex, Gemini, Copilot, OpenCode):** the orchestrator creates `.worktrees/<TICKET-ID>` inside the repo, excluded through `.git/info/exclude` and never `.gitignore`, and passes side-fix the path and base SHA. side-fix confirms it is in that worktree before changing anything. Gates that don't read git excludes, such as some lint and test globs, can pick up those files while the worktree exists.
-- **side-fix can't spawn (Codex, Gemini, OpenCode):** side-fix stops at "ready for verify". The orchestrator runs side-fix's verify loop against the worktree (a fresh `reviewer` and a `verifier` each round, at most 3 fix rounds), sends findings back to side-fix, and ships the side PR itself.
+- **side-fix can't spawn (Codex, Gemini, OpenCode):** side-fix stops at "ready for verify". The orchestrator runs side-fix's verify loop against the worktree (a fresh `reviewer` and a `verifier` each round, at most 3 fix rounds, then the adversarial pass, at most 3 more), sends findings back to side-fix, and ships the side PR itself.
 - **Spawn blocked at runtime (any tool):** side-fix stops at "ready for verify" with its worktree path, branch, and HEAD; the orchestrator runs its verify loop and ships it, as above.
 - **No main-thread agent (Codex, Cursor, Gemini):** the orchestrator procedure is Part C of the global file; it applies only to the main session, and workers ignore it.
 - **No documented resume (Gemini; Copilot after a worker finishes):** re-spawn with the prior report and findings.
@@ -125,7 +126,7 @@ Diff the workers and skills file by file the same way, for example `diff Claude/
 ## Adding a tool
 
 1. From the tool's official docs, find: the global instructions path, the subagent and skills directories and file formats, the supported frontmatter fields, and whether it supports tool restriction, background runs, per-agent worktrees, and nested subagents. Also find whether the main session can run as a custom agent, whether a subagent can be resumed with its context, and whether spawns can be restricted per agent.
-2. Create `<Tool>/` with the instructions file, the agent definitions, the skills, and a README with the same sections as the existing ports (Contents, Install, Run the orchestrator, How it works, Differences from Claude, Known gaps, Per-repo overrides). Ship six agents (the orchestrator and the five workers) if the main session can run as a custom agent; otherwise ship the five workers and put the orchestrator in Part C of the global file.
+2. Create `<Tool>/` with the instructions file, the agent definitions, the skills, and a README with the same sections as the existing ports (Contents, Install, Run the orchestrator, How it works, Differences from Claude, Known gaps, Per-repo overrides). Ship seven agents (the orchestrator and the six workers) if the main session can run as a custom agent; otherwise ship the six workers and put the orchestrator in Part C of the global file.
 3. Change only what the tool's mechanics force. Use the fallbacks above where the tool lacks isolation, nesting, a main-thread agent, or resume.
 4. Add the tool to the Layout and capability tables and to both sync commands here.
 
