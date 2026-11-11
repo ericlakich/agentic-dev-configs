@@ -106,7 +106,8 @@ verify      reviewer          fresh every round; findings R1, R2, ... marked clo
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
             adversarial       last, once review passes; fresh every pass; findings S1, S2, ... with exploit paths;
                               local throwaway PoCs only; at most 3 rounds; the PR is ready only on its approval
-ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
+ship        orchestrator      push, PR (stacked when there is more than one; every stack merge gets a verifier and a fresh
+                              adversarial before it ships), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
@@ -118,6 +119,8 @@ side issue  side-fix          own ticket, branch, isolated copy, and PR; scaled-
 Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units and their agent IDs, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
 
 You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom and the main PR on top, opened only after every side-fix has ended. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
+
+Two gates protect the workflow itself. A change to a workflow-control path (agent definitions, skills, instruction files, hooks, MCP config, or agent settings, for any AI tool) that you did not approve forces the main PR to a draft; the question batch lists the paths the plan will touch so you can approve them up front. A pre-existing security issue on a public repo is parked for the report with a private-advisory recommendation, never filed publicly.
 
 The question batch covers workflow permissions (merge, deploys, new dependencies). Cursor's own tool approvals are separate: a run still pauses on any terminal command or MCP tool call your Run Mode does not allow. For an unattended run in the IDE, use the Allowlist or Auto-review Run Mode (Settings > Agents > Approvals & Execution) and allowlist the commands the workflow uses (`git`, `gh`, your tracker's MCP tools). In the CLI, add them to `permissions.allow` in `~/.cursor/cli-config.json`, for example `Shell(git)`, `Shell(gh)`, and `Mcp(<server>:*)`. Keep the B6 rails. ([run modes](https://cursor.com/docs/agent/security/run-modes), [CLI permissions](https://cursor.com/docs/cli/reference/permissions))
 
@@ -142,7 +145,7 @@ The workflow assumes the agent can reach the repo's ticket tracker (through an M
 | Resume a worker | `SendMessage` to the agent's ID or name | Pass the agent ID the subagent run returned; it keeps its full context, also after a background run completes ([subagents](https://cursor.com/docs/subagents#resuming-subagents)) |
 | Model selection | `model: inherit` | `model: inherit` (the default) or a model ID |
 
-Hooks are not part of this port. Cursor reads hooks from `~/.cursor/hooks.json`.
+Hooks are not part of this port. Cursor reads hooks from `~/.cursor/hooks.json`; by default it also imports Claude Code hooks, so a repo's `.claude/settings*.json` hooks can change what runs.
 
 ## Known gaps
 
@@ -162,11 +165,11 @@ Hooks are not part of this port. Cursor reads hooks from `~/.cursor/hooks.json`.
 - Unverified: whether subagents receive User Rules. The agents cite rules by number (B4, B5, B6), and those references only resolve if User Rules reach the subagent. If they do, workers also see Part C; B0 tells them to ignore it. ([subagents](https://cursor.com/docs/context/subagents))
 - Unverified: whether a CLI `permissions.allow` entry suppresses the approval prompt for a shell command or MCP tool. The docs give the format but say so only for web fetch. Test it before an unattended CLI run. ([CLI permissions](https://cursor.com/docs/cli/reference/permissions))
 - `adversarial` has `readonly: true`, which blocks state-changing shell commands, so it may be unable to write or run a throwaway PoC in a temp dir, or to start a service for one. Its findings then stay `[suspected]` with the PoC described, and the orchestrator confirms them at `path:line` as it does for any `suspected` finding; `side-fix` fixes them or stops `blocked`, since it may not dispute its own blockers or majors. Its PoC rules (scrubbed environment, local backends only) apply only if `readonly` lets it run one. ([subagents](https://cursor.com/docs/context/subagents))
-- Unverified: whether `readonly` blocks test runs. `reviewer` and `adversarial` may run an existing test to confirm a defect; if `readonly` blocks it, they describe the test instead. ([subagents](https://cursor.com/docs/context/subagents))
+- Unverified: whether `readonly` blocks test runs. `reviewer` and `adversarial` may run an existing test to confirm a defect, and `adversarial` may run a PoC or a stand-in check command; if `readonly` blocks any of these, they describe the test, PoC, or check instead. ([subagents](https://cursor.com/docs/context/subagents))
 
 ## Per-repo overrides
 
 - Repo rules add project rules on top of these User Rules: `.cursor/rules/*.mdc` (frontmatter `description`, `globs`, `alwaysApply`) and `AGENTS.md` at the root and in subdirectories; the CLI applies a root `CLAUDE.md` as a rule. Cursor ranks Team > Project > User. If a repo rule conflicts with these User Rules and the A3 order doesn't settle it, the agent asks in the question batch, or parks the conflict after it.
 - A repo can add agents in `.cursor/agents/` (Cursor also reads `.claude/agents/` and `.codex/agents/`; the `.cursor/` file wins on a name clash). Project agents take precedence on a name clash, so a repo's `.cursor/agents/`, `.claude/agents/`, or `.codex/agents/` agent with the same `name` replaces the user-level one, including this port's `side-fix`. ([subagents](https://cursor.com/docs/context/subagents))
-- A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, the adversarial's verdict and `S` finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
+- A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, the adversarial's verdict and `S` finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports. A change to an override of an agent the loop spawns ships as a draft for your review (Part C Phase 4).
 - Worktree setup commands for a repo go in `.cursor/worktrees.json`. The CLI's `-w/--worktree [name]` creates `~/.cursor/worktrees/<repo>/<name>`. ([worktrees](https://cursor.com/docs/configuration/worktrees))
