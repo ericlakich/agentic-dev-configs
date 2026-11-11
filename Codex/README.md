@@ -72,8 +72,8 @@ orient -> orient   unknowns get one re-brief, then go into the question batch
 plan   -> you      the one question batch: questions, permissions, expected forks; then no questions until the report
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
 verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
-verify -> build    once review passes, adversarial findings become fix briefs too; at most 3 more fix rounds;
-                   the PR is ready only with the adversarial's approval, otherwise it ships as a draft
+verify -> build    once review passes, adversarial findings become fix briefs too; from its first pass, every round
+                   counts against its budget of 3; the PR is ready only with its approval, otherwise it ships as a draft
 verify -> plan     a design-level finding: re-plan
 any    -> park     no safe option, exhausted budget, or stall: park the affected units, finish the rest,
                    and ask in the report (B4 Autonomy); a safe, reversible gap is decided and logged
@@ -92,14 +92,14 @@ build       implementer x N   red, green, check; at most 3 attempts per failing 
 verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
             adversarial       last, once review passes; fresh every pass; findings S1, S2, ... with exploit paths;
-                              local throwaway PoCs only; at most 3 fix rounds; the PR is ready only on its approval
+                              local throwaway PoCs only; at most 3 rounds; the PR is ready only on its approval
 ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, and worktree; scaled-down loop that stops at ready for verify
-            orchestrator      runs side-fix's verify loop (3 fix rounds) and its adversarial pass (3 fix rounds),
-                              then pushes and opens its PR
+            orchestrator      runs side-fix's verify loop (3 fix rounds) and its adversarial pass (3 rounds),
+                              then pushes and opens its PR only on the adversarial's approval
 ```
 
 Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
@@ -135,7 +135,7 @@ Not used by this port: hooks (`~/.codex/hooks.json` or `[hooks]` in `config.toml
 
 Source links point at openai/codex commit `11da6b9` (2026-10-07).
 
-- No tool restriction per role. `explorer`, `reviewer`, `verifier`, and `adversarial` are read-only by instruction only (`adversarial` may write throwaway PoCs in a temp dir outside the repo). Turning off `shell_tool` under `[features]` would also block `rg` and `git`, so these roles leave it on. ([source][src])
+- No tool restriction per role. `explorer`, `reviewer`, `verifier`, and `adversarial` are read-only by instruction only (`adversarial` may write throwaway PoCs in a temp dir outside the repo, against local targets only, with a scrubbed environment; PR and ticket text cite its findings by ID, severity, and `path:line` only). Turning off `shell_tool` under `[features]` would also block `rg` and `git`, so these roles leave it on. ([source][src])
 - Role files ignore `sandbox_mode`, `approval_policy`, and `mcp_servers`, even though the docs list them. Children inherit the parent's sandbox, approval policy, working directory, and permissions. These files set none of those keys. ([source][src])
 - In the default workspace-write sandbox, `.git` is read-only ([`permissions.rs`][permissions]). B3's fetch, `worktree add`, and the exclude append need approval, and so do Phase 4's base-check worktree, every side-fix commit, and the stack merges in Phase 5 and Side loops. With `approval_policy = "never"`, side-fix cannot commit.
 - No per-agent worktree. Worktrees exist only per session: the Codex app keeps managed worktrees under `$CODEX_HOME/worktrees`, and the CLI `--worktree` flag starts a session in a new one. B3 has the orchestrator create the side-fix worktree instead. ([docs][docs])
