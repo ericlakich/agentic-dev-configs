@@ -116,6 +116,8 @@ Every worker report starts with `Status: <done|partial|blocked|needs-input> afte
 
 You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom and the main PR on top, opened only after every side-fix has ended. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
 
+Two gates protect the workflow itself. A change to a workflow-control path (agent definitions, skills, instruction files, hooks, MCP config, or agent settings, for any AI tool) that you did not approve forces the main PR to a draft; the question batch lists the paths the plan will touch so you can approve them up front. A pre-existing security issue on a public repo is parked for the report with a private-advisory recommendation, never filed publicly.
+
 The question batch covers workflow permissions (merge, deploys, new dependencies). Claude Code's own tool-permission prompts are separate: a run still pauses on any command or MCP tool your settings do not allow. For an unattended run, allow the commands the workflow uses (`git`, `gh`, your tracker's MCP tools) in `permissions.allow`, and keep the B6 rails.
 
 Hard rails (B6) apply to every agent: no secrets, no `--no-verify`, no skipped tests, no force-push or history rewrites, no production changes without an explicit go-ahead.
@@ -165,5 +167,5 @@ If you added this line before the `adversarial` agent existed, add `adversarial`
 ## Per-repo overrides
 
 - A repo's `CLAUDE.md` adds project rules on top of this one. If the two conflict and the A3 order doesn't settle it, the agent asks in the question batch, or parks the conflict after it.
-- A repo's `.claude/agents/<name>.md` with the same `name` replaces the user-level agent for that repo.
+- A repo's `.claude/agents/<name>.md` with the same `name` replaces the user-level agent for that repo. A change to an override of an agent the loop spawns ships as a draft for your review (orchestrator Phase 4).
 - A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, the adversarial's verdict and `S` finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
