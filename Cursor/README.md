@@ -85,8 +85,8 @@ orient -> orient   unknowns get one re-brief, then go into the question batch
 plan   -> you      the one question batch: questions, permissions, expected forks; then no questions until the report
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
 verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
-verify -> build    once review passes, adversarial findings become fix briefs too; at most 3 more fix rounds;
-                   the PR is ready only with the adversarial's approval, otherwise it ships as a draft
+verify -> build    once review passes, adversarial findings become fix briefs too; from its first pass, every round
+                   counts against its budget of 3; the PR is ready only with its approval, otherwise it ships as a draft
 verify -> plan     a design-level finding: re-plan
 any    -> park     no safe option, exhausted budget, or stall: park the affected units, finish the rest,
                    and ask in the report (B4 Autonomy); a safe, reversible gap is decided and logged
@@ -105,13 +105,13 @@ build       implementer x N   red, green, check; at most 3 attempts per failing 
 verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
             adversarial       last, once review passes; fresh every pass; findings S1, S2, ... with exploit paths;
-                              local throwaway PoCs only; at most 3 fix rounds; the PR is ready only on its approval
+                              local throwaway PoCs only; at most 3 rounds; the PR is ready only on its approval
 ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, isolated copy, and PR; scaled-down loop with its own adversarial pass,
-                              3 fix rounds each, background
+                              3 rounds each, background
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
@@ -161,8 +161,8 @@ Hooks are not part of this port. Cursor reads hooks from `~/.cursor/hooks.json`.
 - Unverified: whether Cursor reads `~/.claude/CLAUDE.md`. ([rules](https://cursor.com/docs/context/rules))
 - Unverified: whether subagents receive User Rules. The agents cite rules by number (B4, B5, B6), and those references only resolve if User Rules reach the subagent. If they do, workers also see Part C; B0 tells them to ignore it. ([subagents](https://cursor.com/docs/context/subagents))
 - Unverified: whether a CLI `permissions.allow` entry suppresses the approval prompt for a shell command or MCP tool. The docs give the format but say so only for web fetch. Test it before an unattended CLI run. ([CLI permissions](https://cursor.com/docs/cli/reference/permissions))
-- `adversarial` has `readonly: true`, which blocks state-changing shell commands, so it may be unable to write or run a throwaway PoC in a temp dir. Its findings then stay `[suspected]` with the PoC described, and the orchestrator confirms them at `path:line` as it does for any `suspected` finding. ([subagents](https://cursor.com/docs/context/subagents))
-- Unverified: whether `readonly` blocks test runs. `reviewer` may run an existing test to confirm a defect; if `readonly` blocks it, the reviewer describes the test instead. ([subagents](https://cursor.com/docs/context/subagents))
+- `adversarial` has `readonly: true`, which blocks state-changing shell commands, so it may be unable to write or run a throwaway PoC in a temp dir, or to start a service for one. Its findings then stay `[suspected]` with the PoC described, and whoever spawned it (the orchestrator, or `side-fix` in its own loop) confirms them at `path:line` as it does for any `suspected` finding. Its PoC rules (scrubbed environment, local backends only) apply only if `readonly` lets it run one. ([subagents](https://cursor.com/docs/context/subagents))
+- Unverified: whether `readonly` blocks test runs. `reviewer` and `adversarial` may run an existing test to confirm a defect; if `readonly` blocks it, they describe the test instead. ([subagents](https://cursor.com/docs/context/subagents))
 
 ## Per-repo overrides
 
