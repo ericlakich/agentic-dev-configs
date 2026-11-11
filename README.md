@@ -119,9 +119,9 @@ Every hunk should be a tool mechanic:
 
 - Agent-file ports: the frontmatter.
 - Part C ports: the `## Part C` heading, a line limiting Part C to the main session, and every heading one level down.
-- Every port: the intro line (it names the global file), the Operating rules lines on the default prompt and on spawning and resuming, and Side loops. Most ports also change the background-workers line; where a worker can't be resumed, the resume lines in Phases 3 and 4 change too. Where the brief has no `Target` line (Codex, Gemini, OpenCode), the Phase 4 adversarial spawn line changes too.
+- Every port: the intro line (it names the global file), the Operating rules lines on the default prompt and on spawning and resuming, Side loops, and the Phase 4 path-check line (it names the port's own agent, instruction, hook, and settings paths). Most ports also change the background-workers line; where a worker can't be resumed, the resume lines in Phases 3 and 4 change too. Where the brief has no `Target` line (Codex, Gemini, OpenCode), the Phase 4 adversarial spawn line changes too.
 
-Diff the workers and skills file by file the same way, for example `diff Claude/skills/pr-review/SKILL.md Gemini/skills/pr-review/SKILL.md`.
+Diff the workers and skills file by file the same way, for example `diff Claude/skills/pr-review/SKILL.md Gemini/skills/pr-review/SKILL.md`. Expect the adversarial's item 1 and instruction-files line, and side-fix's path-check line, to name the port's own paths.
 
 ## Adding a tool
 
