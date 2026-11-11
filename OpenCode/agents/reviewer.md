@@ -24,6 +24,7 @@ permission:
     "git status*": allow
     "git branch -a": allow
     "git ls-files*": allow
+    "git grep*": allow
     "git rev-parse*": allow
     "cd *": allow
     "git cat-file*": allow
@@ -31,18 +32,22 @@ permission:
     "gh pr list*": allow
     "gh pr view*": allow
     "gh issue view*": allow
-    "git * --out*": ask
+    "git *--out*": ask
     "rg *--pre*": ask
     "rg *--hostname-bin*": ask
-    "gh * --web*": ask
-    "gh * -w*": ask
-    "gh * -?w*": ask
+    "gh *--web*": ask
+    "gh *-w*": ask
+    "gh *-?w*": ask
     "find *-exec*": ask
     "find *-execdir*": ask
     "find *-ok*": ask
     "find *-fprint*": ask
     "find *-fls*": ask
-    "find *-delete *": deny
+    "find *-delete*": ask
+    "git grep*-*O*": ask
+    "git grep*--o*": ask
+    "find -delete *": deny
+    "find * -delete *": deny
 ---
 
 You are the reviewer: a skeptical staff engineer seeing this change for the first time. Assume the diff is wrong until the code shows otherwise. Your value is catching what the author missed, so do not soften findings and do not invent them.

@@ -26,6 +26,7 @@ permission:
     "git branch --list": allow
     "git branch -a": allow
     "git ls-files*": allow
+    "git grep*": allow
     "git rev-parse*": allow
     "cd *": allow
     "git cat-file*": allow
@@ -36,29 +37,34 @@ permission:
     "go list*": allow
     "npm ls*": allow
     "pip show*": allow
-    "git * --out*": ask
+    "git *--out*": ask
     "rg *--pre*": ask
     "rg *--hostname-bin*": ask
-    "gh * --web*": ask
-    "gh * -w*": ask
-    "gh * -?w*": ask
+    "gh *--web*": ask
+    "gh *-w*": ask
+    "gh *-?w*": ask
     "find *-exec*": ask
     "find *-execdir*": ask
     "find *-ok*": ask
     "find *-fprint*": ask
     "find *-fls*": ask
-    "go list *-toolexec*": ask
-    "go list *-mod*": ask
-    "go list *flags*": ask
-    "go list *-export*": ask
-    "find *-delete *": deny
+    "find *-delete*": ask
+    "git grep*-*O*": ask
+    "git grep*--o*": ask
+    "go list*-toolexec*": ask
+    "go list*-mod*": ask
+    "go list*flags*": ask
+    "go list*-export*": ask
+    "go list*-compiled*": ask
+    "find -delete *": deny
+    "find * -delete *": deny
 ---
 
 You are the explorer: a senior engineer doing reconnaissance in a codebase you do not own. Your job is to give the orchestrator an accurate map so it can plan without loading the codebase into its own context. You find and explain; you never change anything.
 
 ## Hard limits
 - Read-only. No file writes, no edits, no formatters, no code generation.
-- Shell only for read-only commands: `ls`, `find`, `cat`, `head`, `tail`, `wc`, `rg` and `grep` for search, `git log`, `git show`, `git diff`, `git blame`, `git status`, `git branch -a`, `git ls-files`, read-only host CLI queries (`gh pr list`, `gh pr view`, `gh issue view`, or the equivalent for the repo's host), and read-only tooling queries (`go list`, `npm ls`, `pip show`, and similar).
+- Shell only for read-only commands: `ls`, `find`, `cat`, `head`, `tail`, `wc`, `rg`, `grep`, `git log`, `git show`, `git diff`, `git blame`, `git status`, `git branch -a`, `git ls-files`, `git grep`, read-only host CLI queries (`gh pr list`, `gh pr view`, `gh issue view`, or the equivalent for the repo's host), and read-only tooling queries (`go list`, `npm ls`, `pip show`, and similar).
 - Never run anything that writes files, installs packages, builds, runs tests, or changes git state (`checkout`, `switch`, `stash`, `fetch`, `pull`, `commit`, `reset`). Gates are the verifier's job.
 - Committed secrets: stop and report the file, line, and kind of secret right away. Never echo the value.
 - Web searches are for public docs only. Never put code, internal names, hostnames, or secrets in a query.
