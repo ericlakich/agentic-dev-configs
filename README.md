@@ -35,7 +35,7 @@ The global instructions file has two parts.
 
 - **Outer loop.** The orchestrator runs intake, orient, plan, build, verify, ship, and report, and handles all contact with you. It gathers context first, asks one batch of questions and permission requests at plan time, then runs to the report without asking.
 - **Inner loops.** Each worker runs its own loop on one bounded unit. Its report starts `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides or parks it.
-- **Verify.** An evaluator loop: each round, a fresh `reviewer` and a `verifier` check the full diff, and findings go back to an implementer as fix briefs. At most 3 fix rounds. Once they pass, a fresh `adversarial` agent attacks the change for exploitable issues, and its findings go back the same way. Nothing ships as ready without its approval: if 3 adversarial fix rounds do not earn it, the main PR ships as a draft.
+- **Verify.** An evaluator loop: each round, a fresh `reviewer` and a `verifier` check the full diff, and findings go back to an implementer as fix briefs. At most 3 fix rounds. Once they pass, a fresh `adversarial` agent attacks the change for exploitable issues, and its findings go back the same way. Nothing ships as ready without its approval: from its first pass, every round counts against its own budget of 3, and when that runs out the main PR ships as a draft. PRs and tickets cite its findings by ID, severity, and `path:line` only.
 - **Limits.** Every loop has a budget and a stall rule: stop when the same check fails the same way after two different fixes, or when a pass adds no new evidence. After the question batch, a gap with a safe, reversible option is decided and logged. When none exists, a budget runs out, or progress stalls, the orchestrator parks the affected work, finishes the rest, and puts the question in the final report. Only a committed secret interrupts.
 - **Ledger.** The orchestrator tracks units, fix rounds, open findings, side tickets, PRs, decisions, and parked questions in a ledger. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
 - **Stacked PRs.** When a session opens more than one PR into the same base, they form one stack: each PR targets the branch of the one below it. Side fixes sit below the main PR, which opens only after every side-fix has ended. Stacks merge bottom-up with merge commits, and only when you granted merge.
@@ -63,7 +63,7 @@ Install each copy into its own tool's skills directory (see the tool's README), 
 
 ## How the tools differ
 
-Section numbers, rules, agent roles, loop contracts, and report formats match across directories. Where a tool lacks a capability, the orchestrator's form, B0, B3, B4's resume and verify-budget lines, B9, and side-fix's hand-off change:
+Section numbers, rules, agent roles, loop contracts, and report formats match across directories. Where a tool lacks a capability, the orchestrator's form, B0, B3, B4's resume, verify-budget, and adversarial-budget lines, B9, and side-fix's hand-off change:
 
 | Capability | Claude | Codex | Cursor | Gemini | Copilot | OpenCode |
 |---|---|---|---|---|---|---|
@@ -101,7 +101,7 @@ Expect hunks only here:
 - A3, B1, and B8: instruction file names and the instruction chain.
 - B0: the line that says where the orchestrator runs and is defined, and the plain-session line. Codex also changes the worker line.
 - B3: the side-fix bullet.
-- B4: the "Resume vs fresh" line, the "Outer loop" pointer line, and, where side-fix can't spawn (Codex, Gemini, OpenCode), the verify-budget line.
+- B4: the "Resume vs fresh" line, the "Outer loop" pointer line, and, where side-fix can't spawn (Codex, Gemini, OpenCode), the verify-budget and adversarial-budget lines.
 - B9: the intro line, the tool notes, in some ports the `orchestrator` and `side-fix` rows, and, where side-fix can't spawn or can't pick a model (Codex, Copilot, Gemini, OpenCode), the Model choice intro line. In Part C ports, the last hunk combines B9's changes with the `## Part C` heading.
 
 Then compare the orchestrator. Part C ports hold it at the end of the global file; Copilot and OpenCode have an agent file:
@@ -119,7 +119,7 @@ Every hunk should be a tool mechanic:
 
 - Agent-file ports: the frontmatter.
 - Part C ports: the `## Part C` heading, a line limiting Part C to the main session, and every heading one level down.
-- Every port: the intro line (it names the global file), the Operating rules lines on the default prompt and on spawning and resuming, and Side loops. Most ports also change the background-workers line; where a worker can't be resumed, the resume lines in Phases 3 and 4 change too.
+- Every port: the intro line (it names the global file), the Operating rules lines on the default prompt and on spawning and resuming, and Side loops. Most ports also change the background-workers line; where a worker can't be resumed, the resume lines in Phases 3 and 4 change too. Where the brief has no `Target` line (Codex, Gemini, OpenCode), the Phase 4 adversarial spawn line changes too.
 
 Diff the workers and skills file by file the same way, for example `diff Claude/skills/pr-review/SKILL.md Gemini/skills/pr-review/SKILL.md`.
 
