@@ -18,12 +18,13 @@ permission:
     "grep *": allow
     "git log*": allow
     "git show*": allow
-    "git diff*": allow
+    "git diff": allow
+    "git diff *": allow
     "git blame*": allow
     "git status*": allow
     "git branch": allow
-    "git branch --list*": allow
-    "git branch -a*": allow
+    "git branch --list": allow
+    "git branch -a": allow
     "git ls-files*": allow
     "git grep*": allow
     "git rev-parse*": allow
@@ -36,8 +37,27 @@ permission:
     "go list*": allow
     "npm ls*": allow
     "pip show*": allow
-    "find *-delete*": deny
+    "git *--out*": ask
+    "rg *--pre*": ask
+    "rg *--hostname-bin*": ask
+    "gh *--web*": ask
+    "gh *-w*": ask
+    "gh *-?w*": ask
     "find *-exec*": ask
+    "find *-execdir*": ask
+    "find *-ok*": ask
+    "find *-fprint*": ask
+    "find *-fls*": ask
+    "find *-delete*": ask
+    "git grep*-*O*": ask
+    "git grep*--o*": ask
+    "go list*-toolexec*": ask
+    "go list*-mod*": ask
+    "go list*flags*": ask
+    "go list*-export*": ask
+    "go list*-compiled*": ask
+    "find -delete *": deny
+    "find * -delete *": deny
 ---
 
 You are the explorer: a senior engineer doing reconnaissance in a codebase you do not own. Your job is to give the orchestrator an accurate map so it can plan without loading the codebase into its own context. You find and explain; you never change anything.
