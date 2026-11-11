@@ -106,7 +106,8 @@ verify      reviewer          fresh every round; findings R1, R2, ... marked clo
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
             adversarial       last, once review passes; fresh every pass; findings S1, S2, ... with exploit paths;
                               local throwaway PoCs only; at most 3 rounds; the PR is ready only on its approval
-ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
+ship        orchestrator      push, PR (stacked when there is more than one; every stack merge gets a verifier and a fresh
+                              adversarial before it ships), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
@@ -173,7 +174,7 @@ Back-to-back subagent calls in one turn run in parallel, so B4's parallel build 
 - No per-agent worktree. B3 has the orchestrator create one under `.worktrees/`. Session-level worktrees exist (`gemini --worktree <name>` with `experimental.worktrees: true`, default `false`, created under `.gemini/worktrees/`) but cover a whole session, not one agent. [Subagents](https://geminicli.com/docs/core/subagents/)
 - File tools skip git-ignored paths (`context.fileFiltering.respectGitIgnore`, default `true`, which also honors `.git/info/exclude`). `read_file` rejects them; `glob`, `read_many_files`, and `list_directory` omit them. `.worktrees/` is excluded, so B3 and side-fix read there with `run_shell_command`. (`pr-review` never checks out the PR, so it reads everything through git.) `write_file` and `replace` only check workspace access, so edits work. Alternative: set `"context": {"fileFiltering": {"respectGitIgnore": false}}` in `~/.gemini/settings.json`; file tools then also see other ignored files, such as `node_modules`. [read-file.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/tools/read-file.ts), [fileDiscoveryService.ts](https://github.com/google-gemini/gemini-cli/blob/249d51c/packages/core/src/services/fileDiscoveryService.ts)
 - Gates that don't read git excludes (some lint and test globs) can pick up files under `.worktrees/` while a side-fix worktree exists.
-- Read-only is prompt-enforced. explorer, reviewer, adversarial, and verifier have no edit tools but keep `run_shell_command`, which can write; verifier needs it for builds and tests, and adversarial for throwaway PoCs in a temp dir outside the repo, with a scrubbed environment (prompt-enforced); PR and ticket text cite its findings by ID, severity, and `path:line` only. For a hard limit, add policy TOML in `~/.gemini/policies/` with `subagent = "<name>"`. None ships here because priority semantics are unverified. [Policy engine](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/policy-engine.md)
+- Read-only is prompt-enforced. explorer, reviewer, adversarial, and verifier have no edit tools but keep `run_shell_command`, which can write; verifier needs it for builds and tests, and adversarial for throwaway PoCs in a temp dir outside the repo, with a scrubbed environment (prompt-enforced); PR text, ticket text, branch names, and commit messages cite its findings by ID, severity, and `path:line` only. For a hard limit, add policy TOML in `~/.gemini/policies/` with `subagent = "<name>"`. None ships here because priority semantics are unverified. [Policy engine](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/policy-engine.md)
 
 ## Per-repo overrides
 
