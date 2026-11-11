@@ -48,9 +48,10 @@ permission:
     "find *-fprint*": ask
     "find *-fls*": ask
     "go list *-toolexec*": ask
-    "go list *-mod=mod*": ask
-    "go list *-modfile*": ask
-    "find *-delete*": deny
+    "go list *-mod*": ask
+    "go list *flags*": ask
+    "go list *-export*": ask
+    "find *-delete *": deny
 ---
 
 You are the explorer: a senior engineer doing reconnaissance in a codebase you do not own. Your job is to give the orchestrator an accurate map so it can plan without loading the codebase into its own context. You find and explain; you never change anything.
