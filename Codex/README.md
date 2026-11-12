@@ -11,6 +11,7 @@ User-level configuration for [OpenAI Codex](https://learn.chatgpt.com/docs) ([so
 | `agents/implementer.toml` | `~/.codex/agents/implementer.toml` | Builds one scoped unit of work |
 | `agents/reviewer.toml` | `~/.codex/agents/reviewer.toml` | Fresh-context adversarial diff review |
 | `agents/verifier.toml` | `~/.codex/agents/verifier.toml` | Runs the repo's real gates, reports pass/fail |
+| `agents/adversarial.toml` | `~/.codex/agents/adversarial.toml` | Last verify pass: attacks the change for security loopholes; nothing ships as ready without its approval |
 | `agents/side-fix.toml` | `~/.codex/agents/side-fix.toml` | Takes an unrelated issue to a ready-for-verify branch in a worktree the orchestrator creates |
 | `skills/pr-review/SKILL.md` | `~/.codex/skills/pr-review/` | Reviews a GitHub PR with the `reviewer` subagent and reports findings |
 
@@ -49,7 +50,7 @@ codex
 
 `~/.codex/AGENTS.md` also reaches subagents (inferred; see Known gaps), so every worker loads Part C. B0 tells workers to ignore it, and Part C opens by saying it applies only to the main session. Both are instructions only.
 
-Not shipped: `codex --profile orchestrator`, with a profile that sets root `developer_instructions` to the Part C text. Root `developer_instructions` adds a developer message, and children inherit it unless their role sets its own ([`child_config.rs`][child-config]). All five roles here set their own, so workers would not get it. This port keeps Part C in `AGENTS.md` instead, so every main session follows it without a flag. Untested.
+Not shipped: `codex --profile orchestrator`, with a profile that sets root `developer_instructions` to the Part C text. Root `developer_instructions` adds a developer message, and children inherit it unless their role sets its own ([`child_config.rs`][child-config]). All six roles here set their own, so workers would not get it. This port keeps Part C in `AGENTS.md` instead, so every main session follows it without a flag. Untested.
 
 ## How it works
 
@@ -71,6 +72,8 @@ orient -> orient   unknowns get one re-brief, then go into the question batch
 plan   -> you      the one question batch: questions, permissions, expected forks; then no questions until the report
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
 verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
+verify -> build    once review passes, adversarial findings become fix briefs too; from its first pass, every round
+                   counts against its budget of 3; the PR is ready only with its approval, otherwise it ships as a draft
 verify -> plan     a design-level finding: re-plan
 any    -> park     no safe option, exhausted budget, or stall: park the affected units, finish the rest,
                    and ask in the report (B4 Autonomy); a safe, reversible gap is decided and logged
@@ -88,21 +91,27 @@ build       implementer x N   red, green, check; at most 3 attempts per failing 
             orchestrator      read each unit's diff and commit it
 verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
-ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
+            adversarial       last, once review passes; fresh every pass; findings S1, S2, ... with exploit paths;
+                              local throwaway PoCs only; at most 3 rounds; the PR is ready only on its approval
+ship        orchestrator      push, PR (stacked when there is more than one; every stack merge gets a verifier and a fresh
+                              adversarial before it ships), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, and worktree; scaled-down loop that stops at ready for verify
-            orchestrator      runs side-fix's verify loop (3 fix rounds), then pushes and opens its PR
+            orchestrator      runs side-fix's verify loop (3 fix rounds) and its adversarial pass (3 rounds),
+                              then pushes and opens its PR only on the adversarial's approval
 ```
 
 Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
 
 You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom and the main PR on top, opened only after every side-fix has ended. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
 
+Two gates protect the workflow itself. First, workflow-control paths (each AI tool's folder, such as `.codex/` or `.claude/`, its agent files and MCP config, and instruction files such as `AGENTS.md` and `CLAUDE.md`) and git's own config and hooks are checked each time an implementer returns and before every review. The check is best effort, not a sandbox: it catches changes after the fact, and anything it misses can still run. The question batch lists the ones the plan will touch, so you can approve them up front. An unapproved change that is incidental is removed by a fix brief: a file the session created is deleted and a tracked file that was clean before the session is restored, but a file that was already untracked, ignored, or changed before the session is never deleted, overwritten, or restored (a change to it is parked). An unapproved change the ticket needs is parked, and the main PR ships as a draft. An approved change to hooks, config, MCP config, skills, commands, or the definition of an agent the loop spawns also makes it a draft; only approved plain instruction-file changes proceed. A change to your user-level config files, wherever they live, is parked; so is any change to the main checkout when the work runs in a separate worktree because that config lives in the repo. Second, a pre-existing security issue on a public repo is parked for the report with a private-advisory recommendation, never filed publicly.
+
 The question batch covers workflow permissions (merge, deploys, new dependencies). Codex's own sandbox approvals are separate: in the default workspace-write sandbox every `.git` write asks for approval (Known gaps), so a run still pauses on commits, fetches, worktrees, and stack merges. For an unattended run, add `prefix_rule(pattern = [...], decision = "allow")` rules for the commands the workflow uses (`git`, `gh`) in a `$CODEX_HOME/rules/*.rules` file. A command whose every segment matches an allow rule skips its prompt and runs outside the sandbox ([`exec_policy.rs`][exec-policy]). Keep the rules narrow and keep the B6 rails: an allow rule for `["git", "push"]` also allows `git push --force`, which only B6 forbids. Models that ignore allow rules (`IgnoreForCyberModel`) still prompt ([`model_policy.rs`][model-policy]).
 
-Model choice (B9): the orchestrator passes `spawn_agent`'s `model` argument (an exact slug from the tool's model list; no aliases), and optionally `reasoning_effort`, at spawn time. It picks a cheaper tier for bounded, checkable work such as explorer lookups and verifier runs, and the session's model for reviewers, hard implementer units, and side-fix. A model you name in the session wins. Without `model`, a worker runs on `agents.default_subagent_model` if set, else the session's model, and a role file's own `model` would override the argument (these set none). Resuming a worker cannot change its model. If the multi-agent V2 setting `expose_spawn_agent_model_overrides` is off, the argument is hidden and workers run on the configured model. ([`multi_agents_spec.rs`][ma-spec], [`child_config.rs`][child-config])
+Model choice (B9): the orchestrator passes `spawn_agent`'s `model` argument (an exact slug from the tool's model list; no aliases), and optionally `reasoning_effort`, at spawn time. It picks a cheaper tier for bounded, checkable work such as explorer lookups and verifier runs, and the session's model for reviewers, the adversarial agent, hard implementer units, and side-fix. A model you name in the session wins. Without `model`, a worker runs on `agents.default_subagent_model` if set, else the session's model, and a role file's own `model` would override the argument (these set none). Resuming a worker cannot change its model. If the multi-agent V2 setting `expose_spawn_agent_model_overrides` is off, the argument is hidden and workers run on the configured model. ([`multi_agents_spec.rs`][ma-spec], [`child_config.rs`][child-config])
 
 ## Differences from Claude
 
@@ -119,8 +128,8 @@ Model choice (B9): the orchestrator passes `spawn_agent`'s `model` argument (an 
 | Read-only enforcement | Instructions; `permissions.deny` for a hard guarantee | Instructions only; roles inherit the parent's sandbox and approval policy |
 | Background | `background: true` on side-fix | Every subagent runs alongside the parent; spawning returns immediately |
 | Worktree isolation | `isolation: worktree` on side-fix | None per agent; the orchestrator creates `.worktrees/<TICKET-ID>` for side-fix (B3) |
-| Nested subagents | side-fix spawns `reviewer` and `verifier` | V1: off (`agents.max_depth = 1`). V2 (current models): allowed. Either way the orchestrator runs side-fix's verify loop and ships its branch |
-| PR stacking for side-fix | side-fix merges its `Stack onto` branch and opens its PR against it; the orchestrator restacks one that finished late | side-fix branches from the base and never starts a merge; the orchestrator merges the current top side PR's branch into it at ship time, and a conflict goes back to side-fix to resolve inside its ticket's scope |
+| Nested subagents | side-fix spawns `reviewer`, `verifier`, and `adversarial` | V1: off (`agents.max_depth = 1`). V2 (current models): allowed. Either way the orchestrator runs side-fix's verify loop and ships its branch |
+| PR stacking for side-fix | side-fix merges its `Stack onto` branch and opens its PR against it; the orchestrator restacks one that finished late | side-fix branches from the base and never starts a merge; the orchestrator merges the current top side PR's approved SHA into it at ship time, and a conflict goes back to side-fix to resolve inside its ticket's scope |
 | Model selection | `model: inherit`; the orchestrator picks per spawn with the Agent tool's `model` parameter | No `model` set in these files; the orchestrator picks per spawn with `spawn_agent`'s `model` and `reasoning_effort` arguments. Roles accept `model` and `model_reasoning_effort` (a role's `model` would override the argument), and `config.toml` has `agents.default_subagent_model` |
 
 Not used by this port: hooks (`~/.codex/hooks.json` or `[hooks]` in `config.toml`) and custom prompts (`~/.codex/prompts`), which Codex removed.
@@ -129,13 +138,13 @@ Not used by this port: hooks (`~/.codex/hooks.json` or `[hooks]` in `config.toml
 
 Source links point at openai/codex commit `11da6b9` (2026-10-07).
 
-- No tool restriction per role. `explorer`, `reviewer`, and `verifier` are read-only by instruction only. Turning off `shell_tool` under `[features]` would also block `rg` and `git`, so these roles leave it on. ([source][src])
+- No tool restriction per role. `explorer`, `reviewer`, `verifier`, and `adversarial` are read-only by instruction only (`adversarial` may write throwaway PoCs in a temp dir outside the repo, against local targets only, with a scrubbed environment; PR text, ticket text, branch names, and commit messages cite its findings by ID, severity, and `path:line` only). Turning off `shell_tool` under `[features]` would also block `rg` and `git`, so these roles leave it on. ([source][src])
 - Role files ignore `sandbox_mode`, `approval_policy`, and `mcp_servers`, even though the docs list them. Children inherit the parent's sandbox, approval policy, working directory, and permissions. These files set none of those keys. ([source][src])
 - In the default workspace-write sandbox, `.git` is read-only ([`permissions.rs`][permissions]). B3's fetch, `worktree add`, and the exclude append need approval, and so do Phase 4's base-check worktree, every side-fix commit, and the stack merges in Phase 5 and Side loops. With `approval_policy = "never"`, side-fix cannot commit.
 - No per-agent worktree. Worktrees exist only per session: the Codex app keeps managed worktrees under `$CODEX_HOME/worktrees`, and the CLI `--worktree` flag starts a session in a new one. B3 has the orchestrator create the side-fix worktree instead. ([docs][docs])
 - Gates that don't read git excludes (some lint and test globs) can pick up files under `.worktrees/` while a side-fix worktree exists.
 - Multi-agent V2 is what current models use. The bundled model catalog marks gpt-6.1-sol, gpt-6-sol, gpt-6-astra, gpt-6-luna, gpt-5.6-sol, and gpt-5.6-terra as `multi_agent_version: v2`, even when `features.multi_agent_v2` is off. Under V2, `spawn_agent` defaults `fork_turns` to `all`, so a child inherits the parent's whole history; B9 has the orchestrator pass `fork_turns: "none"`. V2 ignores `max_depth` and gives children the spawn tools, so "only the orchestrator spawns" is enforced by instructions only. ([`config/mod.rs`][config-mod], [`models.json`][models], [`spawn.rs`][spawn])
-- Under V1 the default depth is 1, so side-fix cannot spawn `reviewer` or `verifier`. You can set `[agents] max_depth = 2` in `~/.codex/config.toml` to let it. This port does not rely on nesting under either version: side-fix returns ready for verify, and the orchestrator runs its verify loop, then ships. ([source][src])
+- Under V1 the default depth is 1, so side-fix cannot spawn `reviewer`, `verifier`, or `adversarial`. You can set `[agents] max_depth = 2` in `~/.codex/config.toml` to let it. This port does not rely on nesting under either version: side-fix returns ready for verify, and the orchestrator runs its verify loop, then ships. ([source][src])
 - Concurrency is capped: V1 `agents.max_concurrent_threads_per_session` defaults to 6. V2 caps it at 4 threads, counting the root agent, so Part C runs at most 3 workers at once and queues the rest. ([source][src])
 - Codex ships a Claude Code importer ([`codex-rs/external-agent-migration/`][importer]). For subagents it keeps only `name`, `description`, and the body, drops `tools`, `model`, `isolation`, and `background`, and rewrites "Claude"/"CLAUDE.md" to "Codex"/"AGENTS.md". An import of `../Claude/` would keep side-fix's own-worktree and spawning steps, which this port replaces. By the same rules it would likely bring `orchestrator` in as a spawnable role, which this port replaces with Part C (unverified). Install these files instead. Unverified: how the importer is triggered.
 - No main-session role. Codex applies a role only to a spawned or resumed session, so the orchestrator is Part C of `AGENTS.md`, not a role file. ([`child_config.rs`][child-config], [`role.rs`][role])
@@ -167,5 +176,5 @@ Source links point at openai/codex commit `11da6b9` (2026-10-07).
 - A repo's `AGENTS.md` adds project rules on top of this one. Codex walks from the repo root (marked by `.git`) down to the working directory and, in each directory, takes the first of `AGENTS.override.md`, `AGENTS.md`, or a name in `project_doc_fallback_filenames` (default empty). If the repo rules and this file conflict and the A3 order doesn't settle it, the agent asks in the question batch, or parks the conflict after it.
 - All repo instruction files share a 32 KiB budget (`project_doc_max_bytes`). The file that crosses it is truncated. Repo files are skipped in untrusted projects.
 - A repo `CLAUDE.md` is not loaded unless it is listed in `project_doc_fallback_filenames`. B1 still tells the agent to read it as part of the repo's instruction chain.
-- A role in a repo's `.codex/agents/` with the same `name` replaces the user-level one for that repo. This applies in trusted projects: project config outranks user config, and fields the repo role leaves out are merged from the user role. ([`config_layer_source.rs`][layers], [`loader.rs`][loader])
-- A repo override of a worker role must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
+- A role in a repo's `.codex/agents/` with the same `name` replaces the user-level one for that repo. This applies in trusted projects: project config outranks user config, and fields the repo role leaves out are merged from the user role. ([`config_layer_source.rs`][layers], [`loader.rs`][loader]) A change to an override of an agent the loop spawns ships as a draft for your review, even when you approved it (orchestrator Phase 4).
+- A repo override of a worker role must keep the report contract: the `Status:` first line, the reviewer's finding IDs, the adversarial's verdict and `S` finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.

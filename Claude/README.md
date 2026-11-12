@@ -14,6 +14,7 @@ This directory is the canonical version of the workflow. The other tool director
 | `agents/implementer.md` | `~/.claude/agents/implementer.md` | Builds one scoped unit of work |
 | `agents/reviewer.md` | `~/.claude/agents/reviewer.md` | Fresh-context adversarial diff review |
 | `agents/verifier.md` | `~/.claude/agents/verifier.md` | Runs the repo's real gates, reports pass/fail |
+| `agents/adversarial.md` | `~/.claude/agents/adversarial.md` | Last verify pass: attacks the change for security loopholes; nothing ships as ready without its approval |
 | `agents/side-fix.md` | `~/.claude/agents/side-fix.md` | Takes an unrelated issue to its own PR in a background worktree |
 | `skills/pr-review/SKILL.md` | `~/.claude/skills/pr-review/` | Reviews a GitHub PR with the `reviewer` subagent and reports findings |
 
@@ -80,6 +81,8 @@ orient -> orient   unknowns get one re-brief, then go into the question batch
 plan   -> you      the one question batch: questions, permissions, expected forks; then no questions until the report
 build  -> plan     a blocked unit whose fix fits the plan: re-plan
 verify -> build    in-scope findings and diff-caused gate failures become fix briefs; at most 3 fix rounds
+verify -> build    once review passes, adversarial findings become fix briefs too; from its first pass, every round
+                   counts against its budget of 3; the PR is ready only with its approval, otherwise it ships as a draft
 verify -> plan     a design-level finding: re-plan
 any    -> park     no safe option, exhausted budget, or stall: park the affected units, finish the rest,
                    and ask in the report (B4 Autonomy); a safe, reversible gap is decided and logged
@@ -97,17 +100,24 @@ build       implementer x N   red, green, check; at most 3 attempts per failing 
             orchestrator      read each unit's diff and commit it
 verify      reviewer          fresh every round; findings R1, R2, ... marked closed, open, regressed, or disputed
             verifier          one pass per call; a failing gate re-runs once, a changed result is FLAKY
-ship        orchestrator      push, PR (stacked when there is more than one), move the ticket, link both ways;
+            adversarial       last, once review passes; fresh every pass; findings S1, S2, ... with exploit paths;
+                              local throwaway PoCs only; at most 3 rounds; the PR is ready only on its approval
+ship        orchestrator      push, PR (stacked when there is more than one; every stack merge gets a verifier and a fresh
+                              adversarial before it ships), move the ticket, link both ways;
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
-side issue  side-fix          own ticket, branch, worktree, and PR; scaled-down loop, 3 fix rounds, background
+side issue  side-fix          own ticket, branch, worktree, and PR; scaled-down loop with its own adversarial pass,
+                              3 rounds each, background; its PR counts only on the orchestrator's own adversarial approve,
+                              and side-fix opens it only after that
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
 Every worker report starts with `Status: <done|partial|blocked|needs-input> after <n> passes: <reason>`; a report without it counts as `partial`. Workers never ask you anything; they return `needs-input`, and the orchestrator decides it (if a safe, reversible option exists) or parks it for the report. The orchestrator keeps a ledger (B8) of budgets, units and their worker IDs, fix rounds, findings, side tickets, PRs in stack order, your answers, the decisions it made for you, and parked questions. It re-posts the ledger at every phase change except into the report, and rebuilds from it after a context reset.
 
 You hear from the orchestrator twice with something to answer: the question batch after Orient, and the B7 report. In between, it decides safe, reversible gaps itself and logs them, parks anything else, and finishes the rest. The only interrupt is a committed secret. When a session opens more than one PR into the same base, they form one stack (B2): side fixes at the bottom and the main PR on top, opened only after every side-fix has ended. Each PR targets the branch of the one below it, and the report's Merge order table says what to merge first.
+
+Two gates protect the workflow itself. First, workflow-control paths (each AI tool's folder, such as `.claude/`, its agent files and MCP config, and instruction files such as `CLAUDE.md` and `AGENTS.md`) and git's own config and hooks are checked each time an implementer returns and before every review. The check is best effort, not a sandbox: it catches changes after the fact, and anything it misses can still run. The question batch lists the ones the plan will touch, so you can approve them up front. An unapproved change that is incidental is removed by a fix brief: a file the session created is deleted and a tracked file that was clean before the session is restored, but a file that was already untracked, ignored, or changed before the session is never deleted, overwritten, or restored (a change to it is parked). An unapproved change the ticket needs is parked, and the main PR ships as a draft. An approved change to hooks, settings, MCP config, skills, commands, or the definition of an agent the loop spawns also makes it a draft; only approved plain instruction-file changes proceed. Permission rules added to your local settings file are listed in the report for you to review. A change to your user-level config files, wherever they live, is parked; so is any change to the main checkout when the work runs in a separate worktree because that config lives in the repo. Second, a pre-existing security issue on a public repo is parked for the report with a private-advisory recommendation, never filed publicly.
 
 The question batch covers workflow permissions (merge, deploys, new dependencies). Claude Code's own tool-permission prompts are separate: a run still pauses on any command or MCP tool your settings do not allow. For an unattended run, allow the commands the workflow uses (`git`, `gh`, your tracker's MCP tools) in `permissions.allow`, and keep the B6 rails.
 
@@ -119,18 +129,19 @@ The workflow assumes the agent can reach the repo's ticket tracker (through an M
 
 | Agent | Tools | Edits | Notes |
 |---|---|---|---|
-| `orchestrator` | All (no `tools` field) | No product code; git state, ticket and PR text | Main thread only; spawns the five workers and never edits files (both prompt-enforced) |
+| `orchestrator` | All (no `tools` field) | No product code; git state, ticket and PR text | Main thread only; spawns the six workers and never edits files (both prompt-enforced) |
 | `explorer` | Read, Grep, Glob, Bash, WebFetch, WebSearch | No | Returns a file map and findings tagged verified or inferred |
 | `implementer` | All except Agent | In-scope files only | Tests first; leaves changes uncommitted for the orchestrator |
 | `reviewer` | Read, Grep, Glob, Bash, WebFetch | No | Fresh every round; verdict plus findings with stable IDs, severity, and `path:line` |
 | `verifier` | Read, Grep, Glob, Bash | No | Discovers gates from CI config; never invents a command; full or scoped runs; reports `FLAKY` |
-| `side-fix` | All | Yes | `isolation: worktree`, `background: true`; spawns only `reviewer` and `verifier` (prompt-enforced); if it cannot spawn, stops at ready for verify |
+| `adversarial` | Read, Grep, Glob, Bash, WebFetch | No | Fresh every pass; last stage of verify; verdict plus findings `S1`, `S2`, ... with exploit path and `path:line`; throwaway PoCs only in a temp dir outside the repo, against local targets only, with a scrubbed environment (prompt-enforced, since Bash can write); PR text, ticket text, branch names, and commit messages cite its findings by ID, severity, and `path:line` only |
+| `side-fix` | All | Yes | `isolation: worktree`, `background: true`; spawns only `reviewer`, `verifier`, and `adversarial` (prompt-enforced); stops at ready to ship, and opens its PR only after the orchestrator's own adversarial approves that SHA; if it cannot spawn, stops at ready for verify |
 
-All agents use `model: inherit`, so they run on the main session's model unless the orchestrator overrides it. Per B9 (Model choice), it passes the Agent tool's `model` parameter at spawn time: a cheaper tier for bounded, checkable work such as explorer lookups and verifier runs, and the session's model for reviewers, hard implementer units, and side-fix. A model you name in the session wins.
+All agents use `model: inherit`, so they run on the main session's model unless the orchestrator overrides it. Per B9 (Model choice), it passes the Agent tool's `model` parameter at spawn time: a cheaper tier for bounded, checkable work such as explorer lookups and verifier runs, and the session's model for reviewers, the adversarial agent, hard implementer units, and side-fix. A model you name in the session wins.
 
 The read-only agents have no Edit or Write tool, so the tool list blocks file edits. They keep Bash for commands like `git log` and `rg`, and only their instructions keep Bash from writing. For enforcement beyond the prompt, use a `PreToolUse` hook or Claude Code's sandbox (see the [permissions docs](https://code.claude.com/docs)). Settings-level `permissions.deny` rules apply to the whole session, not to one agent.
 
-Subagents load `~/.claude/CLAUDE.md` by default, so every worker sees the B4 loop contract. They can spawn subagents up to a default depth of 3 (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`), so orchestrator, then side-fix, then `reviewer` or `verifier` fits.
+Subagents load `~/.claude/CLAUDE.md` by default, so every worker sees the B4 loop contract. They can spawn subagents up to a default depth of 3 (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`), so orchestrator, then side-fix, then `reviewer`, `verifier`, or `adversarial` fits.
 
 Unverified: whether a resumed `isolation: worktree` subagent keeps its worktree, and whether a fresh one could take over an existing side-fix branch (git does not check out a branch that another worktree holds). So the orchestrator resumes side-fix and never re-spawns it fresh while its worktree exists, and side-fix confirms its worktree path on every resume.
 
@@ -141,10 +152,12 @@ Loop budgets (B4) are enforced by instructions only. Claude Code's `maxTurns` ag
 `orchestrator.md` has no `tools` field, so its spawn limits and its "no product-code edits" rule are prompt-enforced. To enforce the spawn limit, add this line to its frontmatter, with your own tracker's MCP server:
 
 ```yaml
-tools: Agent(explorer, implementer, reviewer, verifier, side-fix), Read, Grep, Glob, Bash, Skill, AskUserQuestion, SendMessage, mcp__<tracker-server>__*
+tools: Agent(explorer, implementer, reviewer, verifier, adversarial, side-fix), Read, Grep, Glob, Bash, Skill, AskUserQuestion, SendMessage, mcp__<tracker-server>__*
 ```
 
 The cost: any `tools` list drops every MCP tool it does not name (`mcp__<server>` or `mcp__<server>__*`; no `mcp__*` wildcard is documented), so the tracker and every other MCP server you rely on must be listed. Bash can still write files, so "no product-code edits" stays partly prompt-enforced. The `Agent(...)` list is honored only on a main-thread agent; inside a subagent definition it is ignored.
+
+If you added this line before the `adversarial` agent existed, add `adversarial` to its `Agent(...)` list. Otherwise the orchestrator cannot spawn it, and every main PR parks and ships as a draft.
 
 ## Skills
 
@@ -155,5 +168,5 @@ The cost: any `tools` list drops every MCP tool it does not name (`mcp__<server>
 ## Per-repo overrides
 
 - A repo's `CLAUDE.md` adds project rules on top of this one. If the two conflict and the A3 order doesn't settle it, the agent asks in the question batch, or parks the conflict after it.
-- A repo's `.claude/agents/<name>.md` with the same `name` replaces the user-level agent for that repo.
-- A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
+- A repo's `.claude/agents/<name>.md` with the same `name` replaces the user-level agent for that repo. A change to an override of an agent the loop spawns ships as a draft for your review, even when you approved it (orchestrator Phase 4).
+- A repo override of a worker must keep the report contract: the `Status:` first line, the reviewer's finding IDs, the adversarial's verdict and `S` finding IDs, and the verifier's `Scope:` line and `FLAKY` result. Otherwise the orchestrator's exit tests cannot read its reports.
