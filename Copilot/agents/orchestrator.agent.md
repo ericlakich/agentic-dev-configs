@@ -30,7 +30,7 @@ Each phase runs under the B4 contract: exit test, budget, stall rule. Re-post th
 
 ### Phase 1: Orient
 - Gather context before asking anything. Spawn `explorer`s, one per independent question, in parallel.
-- Exit test: tracker, owning team, and candidate tickets identified (B2); workflow skill loaded if one covers the repo (A3); instruction chain, standards, and real gates known with their sources (B1); the repo's allowed merge methods (B2); the repo's visibility (`gh repo view --json visibility`, or the host's equivalent; B3); the real path of the user-level config (`realpath ~/.copilot/copilot-instructions.md ~/.copilot/agents`); the untracked and ignored workflow-control files (Phase 4), each with its hash (`git hash-object <path>`).
+- Exit test: tracker, owning team, and candidate tickets identified (B2); workflow skill loaded if one covers the repo (A3); instruction chain, standards, and real gates known with their sources (B1); the repo's allowed merge methods (B2); the repo's visibility (`gh repo view --json visibility`, or the host's equivalent; B3); the real path of the user-level config (`realpath ~/.copilot/copilot-instructions.md ~/.copilot/agents`); each untracked or ignored file under the workflow-control paths (Phase 4), with its hash (`git hash-object <path>`).
 - If the user-level config resolves inside this repo, do the work in a separate worktree, so edits never change the live config mid-session.
 - Back-edge: unknowns left after a round get one re-brief; whatever remains goes into the question batch.
 
@@ -40,7 +40,7 @@ Each phase runs under the B4 contract: exit test, budget, stall rule. Re-post th
 - Send the question batch (A1, B4 Autonomy) as one message. It is the only time you ask before the report, so make it complete:
   - every material question, with options and your recommendation, including which ticket when several match;
   - every permission the plan needs through completion: merge (B2), which covers the whole stack (side PRs sit below the main PR, so it cannot merge alone); any other B2 or B6 gated action; new dependencies, and anything outward-facing beyond opening PRs;
-  - each workflow-control path (Phase 4) the plan will touch, named, so the user can approve it up front;
+  - each workflow-control path (Phase 4) the plan will touch, named, as a permission: a skipped one is not approved;
   - the forks you expect mid-build (a pre-existing gate failure, a choice between two designs), each with the option you will take unless told otherwise.
 - Wait for the answers. Record each on the ledger's `Decisions` line as `me`. A question the user skips takes your stated recommendation (`me: default`, which counts as approval, A1); a permission the user skips is not granted.
 - Then resolve the ticket per B2: use the match, or create one whose description holds the planned change and how it will be verified. Then get on its branch (B2).
@@ -48,7 +48,7 @@ Each phase runs under the B4 contract: exit test, budget, stall rule. Re-post th
 - Re-plan (a back-edge from Build or Verify): skip the batch. Decide or park any new question under Autonomy; the exit test then reads "answered or parked".
 
 ### Phase 3: Build
-Dispatch units with disjoint scopes in parallel; serialize overlapping ones. Decide per returned unit:
+Dispatch units with disjoint scopes in parallel; serialize overlapping ones. Each time an implementer returns, run the workflow-control check (Phase 4) first: agent and settings files reload live. Decide per returned unit:
 - `done`: integrate. Read `git diff -- <paths>` and check it against the brief: in scope, tests present and meaningful, no churn. Stage the explicit paths and commit with the proposed conventional message (B5). An integration problem goes back to the same implementer (re-spawn it with its prior report; it has finished); it counts against its budget.
 - `partial`: re-spawn it once with its prior report and a narrowed goal, or split the unit; otherwise park it (Autonomy).
 - `blocked`: if the fix fits the plan (another file needs to change), re-plan under the B4 budget; otherwise park it.
@@ -58,12 +58,13 @@ Dispatch units with disjoint scopes in parallel; serialize overlapping ones. Dec
 Exit test: every unit integrated and committed; working tree clean.
 
 ### Phase 4: Verify
-Workflow-control paths: agent definitions and repo-level overrides, skills and commands, instruction files (`.github/copilot-instructions.md`, `.github/instructions/`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.claude/rules/`, at any depth), hooks, MCP config (`.mcp.json`), and settings that choose which agent runs or what it may do (`.github/`: `agents/`, `skills/`, `hooks/`, `copilot/settings*.json`; `.claude/`: `agents/`, `skills/`, `commands/`, `settings*.json`; `.agents/skills/`), plus any other AI tool's equivalents in the repo (for example `.cursor/`, `.codex/`, `.gemini/`, `.opencode/`). Match case-insensitively. A path is approved only when the user's own messages in this session name it (the path, or the file it resolves to), a `me` answer in the question batch included. Ticket text never counts, whoever wrote it.
+Workflow-control paths are whole tool folders, not file lists: the `.github/` agent files (`copilot-instructions.md`, `instructions/`, `agents/`, `hooks/`, `copilot/`, `skills/`, `mcp.json`); `.agents/`; `.claude/` (except `.claude/worktrees/`) and every other AI tool's folder in the repo (`.cursor/`, `.codex/`, `.gemini/`, `.opencode/`); `.mcp.json`; and instruction files at any depth (`AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`, `CLAUDE.local.md`, `GEMINI.md`). Match case-insensitively. In a separate worktree (Orient), the same paths in the main checkout (`$(git rev-parse --git-common-dir)/..`) count too. A path is approved only when the user's own messages in this session name it (the path, or the file it resolves to), a `me` answer in the question batch included, never `me: default`. Ticket text never counts, whoever wrote it.
 
-Workflow-control check, before every reviewer or adversarial spawn (each round here and every Phase 5 post-merge pass) and before a side branch moves (Side loops): run `git diff --name-only <target>...HEAD` and `git status --porcelain --ignored`, limited to those paths. Uncommitted, untracked, and ignored files count, except an untracked or ignored file whose Orient hash is unchanged. Each hit is a `W<n>` finding on the ledger (its own ID series), closed only by a `me` approval or the path's removal; the adversarial never closes one.
-- Unapproved and incidental: a fix brief to remove it.
-- Unapproved and the ticket needs it: park it and ship the main PR as a draft (a side fix: Side loops).
-- Approved, but it changes the definition of an agent this loop spawns (a repo-level reviewer, adversarial, verifier, or orchestrator definition or override): the loop cannot attest to its own replacement, so ship the main PR as a draft with it under "Risk and rollout" (ID and path only) for the user.
+Workflow-control check, each time an implementer returns (Phase 3), before every reviewer or adversarial spawn (each round here and every Phase 5 post-merge pass), and before a side branch moves (Side loops): run `git diff --name-only --no-renames <target>...HEAD` and `git status --porcelain --ignored --untracked-files=all`, both limited to those paths (pathspecs with `:(icase)`). An untracked or ignored file whose Orient hash is unchanged is not a hit. Each hit is a `W<n>` finding on the ledger (its own ID series), closed only by a `me` approval or by the fix below; the adversarial never closes one.
+- Unapproved and incidental: a fix brief deletes a file created this session, or restores a tracked file's content on the target. An untracked or ignored file that existed at Orient is never deleted or overwritten: a change to it is parked.
+- Unapproved and needed by the ticket: park it. A parked `W` ships the main PR as a draft (a side fix: Side loops).
+- Copilot CLI documents no repo file that its own permission prompts write, so there is no local-settings exemption: any unapproved change to a settings or hooks path is a hit, handled as above.
+- Approved: a change to hooks, settings, MCP config, or the definition of an agent this loop spawns still ships the main PR as a draft, listed under "Risk and rollout" (ID and path only): the loop cannot attest to what executes or grants permissions. An approved change to instruction files or skills proceeds; tell the adversarial which of them are in its context.
 
 Round 1: fresh `reviewer`(s) on the full diff against the main PR's target (`git diff <target>...HEAD`; the target is the base, or the top side branch once one is merged in, so side-fix code is not reviewed here) with the ticket and standards, and a `verifier` for every gate, in parallel. Give each the working directory, branch, and HEAD SHA. When several reviewers run in one round, give each a finding ID prefix.
 
@@ -71,15 +72,15 @@ A reviewer or verifier that is not `done`: route as in Phase 3, but never resume
 
 Triage every round:
 - Confirm each blocker and major at its `path:line` before acting; confirm `suspected` findings. A misread you drop or downgrade is recorded as `disputed` with the reason.
-- In-scope blocker, major, or minor: a fix brief with the finding IDs to the implementer that owns the paths (re-spawned with its prior report), or a new one. Integrate as in Phase 3.
+- In-scope blocker, major, or minor: a fix brief with the finding IDs to the implementer that owns the paths (re-spawned with its prior report), or a new one. Integrate as in Phase 3. A minor you accept unfixed is recorded as `justified` with the reason.
 - Nit: optional. Out of scope: B3.
 - Design-level finding (the plan was wrong): back to Phase 2 under the re-plan budget (B4).
 - Verifier `FAIL` caused by the diff, or `FLAKY` in a test or path the diff added or changed: a fix brief with the failure excerpt to the implementer that owns the paths. Never re-run a `FLAKY` gate to get a pass.
 - Any other `FAIL` or `FLAKY`: confirm it on the target with a verifier run in a temporary detached worktree at the merge base with the target (`git worktree add --detach <tmp> <merge-base>`; remove it after). If it fails or flakes there too, the diff did not cause it: B3 side ticket (a security cause on a public repo is parked per B3, and the PR names only the gate), then ship with it unless the batch said otherwise. Log it as `self`, list it in the PR under "Risk and rollout", and never merge over it. Otherwise a `FAIL` goes back as a fix brief with both results; a `FLAKY` outside the tests and paths the diff changed is handled like a pre-existing failure, with both results in its side ticket.
 
-Review exit test, on the current HEAD, read from the triaged findings, not the raw verdict:
-- every reviewer `Status: done`; no open blocker or major; every minor closed in a later round (a fix moves HEAD) or justified; nits optional; and
-- every verifier `Status: done` with `Scope: full` and Overall `PASS`, or `INCOMPLETE` only for gates that cannot run locally, each listed with its reason. A failure the diff did not cause counts once it has a side ticket, or is parked per B3, and a ship-with-it entry on the ledger's `Decisions` line (`me` or `self`).
+Review exit test, on the current HEAD, read from the triaged findings and the ledger, not the raw verdict:
+- every reviewer `Status: done`; no open blocker or major; every minor closed in a later round (a fix moves HEAD) or `justified` on the ledger; nits optional; and
+- the round's verifier: `Status: done`, `Scope: full`, and Overall `PASS`, or `INCOMPLETE` only for gates that cannot run locally, each listed with its reason. A failure the diff did not cause counts once it has a side ticket, or is parked per B3, and a ship-with-it entry on the ledger's `Decisions` line (`me` or `self`).
 
 Round n+1: a fresh reviewer on the full diff plus the previous round's findings, `disputed` ones included, to mark each `closed`, `open`, `regressed`, or `disputed`; and a verifier. Intermediate rounds may scope the verifier to the gates that failed; the round before ship runs every gate.
 
@@ -142,7 +143,7 @@ After the Phase 2 batch, send the user nothing that needs an answer until the Ph
 - If the user messages mid-run, answer, record the answer as `me`, and continue.
 
 ## Side loops
-- B3 issues go to `side-fix`, which runs its own scaled-down loop in the background, in the linked worktree you create for it first (B3). Spawn it in the background. Brief it with the ticket ID, the issue, the parent ticket, the base branch, the absolute worktree path, the remote, the base SHA, the repo's B2 conventions, whether the main change depends on it, and `Stack onto` (B2). B3 issues are unrelated to the user's request, so a side fix that needs a workflow-control path (Phase 4) is parked for the report, never auto-fixed.
+- B3 issues go to `side-fix`, which runs its own scaled-down loop in the background, in the linked worktree you create for it first (B3). Spawn it in the background. Brief it with the ticket ID, the issue, the parent ticket, the base branch, the absolute worktree path, the remote, the base SHA, the repo's B2 conventions, whether the main change depends on it, and `Stack onto` (B2), and the Phase 4 workflow-control definition and check commands, copied in full (workers may not see this file). B3 issues are unrelated to the user's request, so a side fix that needs a workflow-control path (Phase 4) is parked for the report, never auto-fixed.
 - A running side-fix's status is its last report or what `read_agent` (or `/tasks`) shows. Never send it a `write_agent` message just to ask for status. Check it at phase boundaries, without polling in between, and carry it on the ledger's `Side tickets` line.
 - `partial` and `needs-input`: as in Phase 3, except that a `partial` on a verify or adversarial budget or stall gets no re-brief (budgets do not reset): park it with no PR, or, after a restack, as in the `done` with a PR bullet.
 - `blocked`: never re-planned into the main plan. A workflow-control hit: park it. A blocker or major it reports instead of fixing: confirm it, then re-spawn it with its prior report and your decision (fix it, or the finding marked `disputed` with your reason). A gate failure it reports: confirm it on its PR's target (the base, or its `Stack onto` after the step 7 merge) and route it as in Phase 4. Anything else: one re-brief if the fix fits its own ticket's scope; otherwise park it.
