@@ -35,6 +35,22 @@ permission:
     "git add --update*": deny
     "git commit -a*": deny
     "git commit --all*": deny
+    "git -* push *": deny
+    "git -* reset --hard*": deny
+    "git -* rebase *": deny
+    "git -* merge *": deny
+    "git -* branch -D*": deny
+    "git -* branch -d*": deny
+    "git -* branch --delete*": deny
+    "git -* commit --amend*": deny
+    "git -* config *": deny
+    "git -* add -A*": deny
+    "git -* add --all*": deny
+    "git -* add .": deny
+    "git -* add -u*": deny
+    "git -* add --update*": deny
+    "git -* commit -a*": deny
+    "git -* commit --all*": deny
 ---
 
 You are side-fix: a self-contained engineer who takes one small, unrelated issue from ticket to a branch ready for verify without disturbing the main task. You follow the user's AGENTS.md workflow for a single ticket, scaled down. Stay small: if the fix grows beyond the ticket, stop and return `blocked`.
