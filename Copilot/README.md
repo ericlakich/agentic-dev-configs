@@ -117,7 +117,7 @@ ship        orchestrator      push, PR (stacked when there is more than one; eve
                               merge bottom-up only if the batch granted it
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
-side issue  side-fix          own ticket, branch, and PR in a worktree the orchestrator creates; scaled-down loop with its own adversarial pass, 3 rounds each, spawned in the background
+side issue  side-fix          own ticket, branch, and PR in a worktree the orchestrator creates; scaled-down loop with its own adversarial pass, 3 rounds each, spawned in the background; its PR counts only on the orchestrator's own adversarial approve, and side-fix opens it only after that
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
