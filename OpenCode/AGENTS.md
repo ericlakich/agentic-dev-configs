@@ -147,6 +147,7 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 
 ### Decisions made for you
 - Each `self` decision: the gap, the option taken, why it was safe
+- Permission rules added to the local settings file during the run, verbatim (orchestrator Phase 4)
 
 ### Recommendations
 - What to do next or differently, most important first
@@ -162,7 +163,7 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 - One ticket per session. Do not carry a session across unrelated tickets.
 - Keep `AGENTS.md` files short. Long references live in their own files, listed under `instructions` in `opencode.json`.
 - Prefer `explorer` subagents over loading large parts of the codebase into the main context.
-- The orchestrator keeps a ledger and re-posts it at every phase change except into the report, after every verify round, and before any long step. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker's `task_id` (`ses_...`) from its `task` result, to resume it by; `Adversarial` holds the last adversarial verdict (`pending` before its first pass), its rounds, and the SHA it attacked; `W` findings are workflow-control hits (orchestrator Phase 4); a side ticket shows `fix round` and `adversarial round` only while the orchestrator runs its verify loop. `PRs` lists the session's PRs bottom-up, one stack per base (B2). `Decisions` records my batch answers and permissions (`me`) and each decision made for me after the batch (`self`, with the reason). `Parked` holds the questions for the report (B4, Autonomy).
+- The orchestrator keeps a ledger and re-posts it at every phase change except into the report, after every verify round, and before any long step. It is the source of truth after a context reset: rebuild state from the latest ledger plus `git log`, `git status`, and the tracker, never from memory. `id` is the worker's `task_id` (`ses_...`) from its `task` result, to resume it by; `Adversarial` holds the last adversarial verdict (`pending` before its first pass), its rounds, and the SHA it attacked; `W` findings are workflow-control hits, and `Baseline` lists the files those checks compare against (orchestrator Phases 1 and 4); a side ticket shows `fix round` and `adversarial round` only while the orchestrator runs its verify loop. `PRs` lists the session's PRs bottom-up, one stack per base (B2). `Decisions` records my batch answers and permissions (`me`) and each decision made for me after the batch (`self`, with the reason). `Parked` holds the questions for the report (B4, Autonomy).
 
 ```
 Ledger: <TICKET-ID> | branch <name> | base <branch> | phase <orient|plan|build|verify|ship|report>
@@ -171,6 +172,7 @@ Units: U1 <agent> <model> <status> <paths> id <worker-id> | U2 ...
 Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
 Adversarial: round <n>/<budget> | verdict <approve|request changes|pending> @ <short sha>
 Findings open: R3 [major] path:line, S2 [blocker] path:line, W1 path, R5 [minor] ... | closed: R1, R2, S1 | disputed: R4 <reason> | justified: R6 <reason>
+Baseline: <path> <blob sha>, ... [main checkout: <path> <blob sha>, ...], or none
 Side tickets: <ID> <status> id <worker-id> worktree <path> [fix round <n>/<budget>, adversarial round <n>/<budget>], or none
 PRs: 1 <link> <branch> -> <base> <open|draft: why|merged> | 2 <link> <branch> -> <branch of 1> ..., or none
 Decisions: <what> -> <answer> (me | self: <reason>), or none
