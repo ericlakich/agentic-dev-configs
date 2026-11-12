@@ -119,4 +119,4 @@ The verdict is the review's recommendation. It is not a GitHub approval.
 ## Tool notes
 
 - Spawn `reviewer` and `verifier` with the `task` tool; each runs in a fresh child session.
-- The reviewer's bash map allows `git show`, `git diff`, `git grep`, `git log`, `git blame`, `git cat-file`, and `git ls-tree`, so reading the PR from the object store needs no prompts.
+- The reviewer's bash map allows `git show`, `git diff`, `git grep`, `git log`, `git blame`, `git cat-file`, and `git ls-tree`, so reading the PR from the object store rarely prompts. `git grep` with an uppercase `O` after a dash (for example `git grep -n TODO <sha>`) does prompt; answer with "Allow once".
