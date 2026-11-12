@@ -103,6 +103,7 @@ Expect hunks only here:
 - B0: the line that says where the orchestrator runs and is defined, and the plain-session line. Codex also changes the worker line.
 - B3: the side-fix bullet.
 - B4: the "Resume vs fresh" line, the "Outer loop" pointer line, and, where side-fix can't spawn (Codex, Gemini, OpenCode), the verify-budget and adversarial-budget lines.
+- B7: the local-settings bullet, dropped in ports whose tool writes no repo-level settings file (Codex, Cursor, Copilot, OpenCode).
 - B9: the intro line, the tool notes, in some ports the `orchestrator` and `side-fix` rows, and, where side-fix can't spawn or can't pick a model (Codex, Copilot, Gemini, OpenCode), the Model choice intro line. In Part C ports, the last hunk combines B9's changes with the `## Part C` heading.
 
 Then compare the orchestrator. Part C ports hold it at the end of the global file; Copilot and OpenCode have an agent file:
