@@ -108,7 +108,8 @@ ship        orchestrator      push, PR (stacked when there is more than one; eve
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, worktree, and PR; scaled-down loop with its own adversarial pass,
-                              3 rounds each, background
+                              3 rounds each, background; its PR counts only on the orchestrator's own adversarial approve,
+                              and side-fix opens it only after that
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
@@ -134,7 +135,7 @@ The workflow assumes the agent can reach the repo's ticket tracker (through an M
 | `reviewer` | Read, Grep, Glob, Bash, WebFetch | No | Fresh every round; verdict plus findings with stable IDs, severity, and `path:line` |
 | `verifier` | Read, Grep, Glob, Bash | No | Discovers gates from CI config; never invents a command; full or scoped runs; reports `FLAKY` |
 | `adversarial` | Read, Grep, Glob, Bash, WebFetch | No | Fresh every pass; last stage of verify; verdict plus findings `S1`, `S2`, ... with exploit path and `path:line`; throwaway PoCs only in a temp dir outside the repo, against local targets only, with a scrubbed environment (prompt-enforced, since Bash can write); PR text, ticket text, branch names, and commit messages cite its findings by ID, severity, and `path:line` only |
-| `side-fix` | All | Yes | `isolation: worktree`, `background: true`; spawns only `reviewer`, `verifier`, and `adversarial` (prompt-enforced); if it cannot spawn, stops at ready for verify |
+| `side-fix` | All | Yes | `isolation: worktree`, `background: true`; spawns only `reviewer`, `verifier`, and `adversarial` (prompt-enforced); stops at ready to ship, and opens its PR only after the orchestrator's own adversarial approves that SHA; if it cannot spawn, stops at ready for verify |
 
 All agents use `model: inherit`, so they run on the main session's model unless the orchestrator overrides it. Per B9 (Model choice), it passes the Agent tool's `model` parameter at spawn time: a cheaper tier for bounded, checkable work such as explorer lookups and verifier runs, and the session's model for reviewers, the adversarial agent, hard implementer units, and side-fix. A model you name in the session wins.
 
