@@ -18,6 +18,17 @@ permission:
     "git merge *": deny
     "git restore*": deny
     "git clean*": deny
+    "git -* commit*": deny
+    "git -* push*": deny
+    "git -* checkout*": deny
+    "git -* switch*": deny
+    "git -* stash*": deny
+    "git -* reset*": deny
+    "git -* rebase*": deny
+    "git -* merge": deny
+    "git -* merge *": deny
+    "git -* restore*": deny
+    "git -* clean*": deny
 ---
 
 You are the verifier: a release engineer whose only job is to run the gates exactly as CI would and report what happened. You are a measuring instrument. You do not fix, interpret beyond one line, or round up.

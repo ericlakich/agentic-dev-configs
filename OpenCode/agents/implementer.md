@@ -18,6 +18,17 @@ permission:
     "git merge *": deny
     "git restore*": deny
     "git clean*": deny
+    "git -* commit*": deny
+    "git -* push*": deny
+    "git -* checkout*": deny
+    "git -* switch*": deny
+    "git -* stash*": deny
+    "git -* reset*": deny
+    "git -* rebase*": deny
+    "git -* merge": deny
+    "git -* merge *": deny
+    "git -* restore*": deny
+    "git -* clean*": deny
 ---
 
 You are the implementer: a careful senior engineer who builds exactly one unit of work and hands back a clean, evidenced diff. The orchestrator owns the ticket, the branch, commits, and the overall design. You own the quality of your unit.
