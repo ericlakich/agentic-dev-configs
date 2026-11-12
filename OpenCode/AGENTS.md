@@ -67,7 +67,7 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
   - The worktree stays until I remove it after merge (`git worktree remove .worktrees/<TICKET-ID>`).
   - For GitHub Issues the ID part is `issue-<n>` (branch `issue-<n>/<slug>`, worktree `.worktrees/issue-<n>`), matching B2.
   - Verify and ship: side-fix cannot spawn agents (B9), so it stops at ready for verify; its report starts `Status: done after <n> passes: ready for verify`. Run its verify loop on its worktree (orchestrator Side loops): each round, a fresh `reviewer` and a `verifier`, each given the worktree path, branch, and HEAD SHA; at most 3 fix rounds (B4); then the adversarial pass (Phase 4), with its budget and stall rule. Send findings back by resuming side-fix with its `task_id` (B4); it fixes them in the same worktree and returns ready for verify again. If either loop ends on budget or stall, park it with no PR (side PRs never ship as drafts). The workflow-control check (orchestrator Phase 4) runs before each reviewer or adversarial spawn and before the branch moves; a hit parks it. Once the review exit test passes and the adversarial approves, stack it (B2): if the session has open side PRs into the same base, fetch, merge the top one's branch into its branch (`git -C <worktree> merge <remote>/<branch>`); a conflict goes back to side-fix by resume, and it resolves it inside its ticket's scope. Then, on the merge HEAD, clean or not: a fresh `reviewer` first when side-fix fixed a conflict, a verifier, and once they pass, one fresh `adversarial` briefed with the merged-in branch's diff as context, with their findings in the same loops (budgets do not reset). Only on an adversarial `approve` at the PR head, push its branch (`git -C <worktree> push -u <remote> HEAD`), open the PR against that branch (or the base), move the ticket to its review state, and link ticket and PR both ways.
-- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch once its PR is open, at the first point with no unit in flight and a clean tree. Units that need it, and the next verify round, wait for that merge. Record the ordering in both PRs under "Risk and rollout".
+- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch once its PR is open, at the first point with no unit in flight and a tree that matches the Orient snapshot (orchestrator Phase 1). Units that need it, and the next verify round, wait for that merge. Record the ordering in both PRs under "Risk and rollout".
 - Committed secrets: stop and flag immediately. That is a rotation, not a cleanup.
 - Pre-existing exploitable security issue, whoever reports it (reviewer, adversarial, verifier, side-fix, implementer): on a public repo (any visibility other than private, internal included), no public ticket, branch, or PR; park it for the report with a private-advisory recommendation. On a private repo, handle it as any other B3 issue, with ticket, branch, PR, and commit text naming it by ID, severity, and `path:line` only.
 - Report every side ticket and PR in the final summary (B7).
@@ -147,7 +147,6 @@ Merge in row order with merge commits. After each merge, retarget the next PR to
 
 ### Decisions made for you
 - Each `self` decision: the gap, the option taken, why it was safe
-- Permission rules added to the local settings file during the run, verbatim (orchestrator Phase 4)
 
 ### Recommendations
 - What to do next or differently, most important first
@@ -172,7 +171,7 @@ Units: U1 <agent> <model> <status> <paths> id <worker-id> | U2 ...
 Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
 Adversarial: round <n>/<budget> | verdict <approve|request changes|pending> @ <short sha>
 Findings open: R3 [major] path:line, S2 [blocker] path:line, W1 path, R5 [minor] ... | closed: R1, R2, S1 | disputed: R4 <reason> | justified: R6 <reason>
-Baseline: <path> <blob sha>, ... [main checkout: <path> <blob sha>, ...], or none
+Baseline: <path> <blob sha, link target, or nested HEAD>, ... | worktrees <paths> | snapshot <git status lines> | user config <path> <blob sha>, ... [main checkout: ...], or none
 Side tickets: <ID> <status> id <worker-id> worktree <path> [fix round <n>/<budget>, adversarial round <n>/<budget>], or none
 PRs: 1 <link> <branch> -> <base> <open|draft: why|merged> | 2 <link> <branch> -> <branch of 1> ..., or none
 Decisions: <what> -> <answer> (me | self: <reason>), or none
