@@ -50,7 +50,7 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
   - Ticket states: in-progress when work starts, review state when the PR opens. If the tracker has no such state, skip the move and say so.
 - Open the PR, move the ticket to its review state, and link ticket and PR both ways. Merge only when I granted it in the question batch (a grant covers the whole stack) or ask later, and only once the verify exit test passed; otherwise stop at the open PR. No force-push or branch deletion unless I ask.
 - Stacking: when a session opens more than one PR into the same base (the main PR and side fixes), stack them in one chain. Order, bottom-up: side-fix PRs (B3) in the order they open, then the main PR, which opens only after every side-fix has ended. Side PRs never ship as drafts; only the main PR can. The lowest PR targets the base. Each PR above it starts from, or merges in, the branch of the PR below it, and targets that branch. A PR that opens out of order is moved into place: the PR that belongs above it merges in its branch, re-runs its gates (a fresh reviewer first after a conflict fix) and a fresh adversarial pass, pushes normally only on its `approve`, and retargets onto it. Each PR names the PR below it under "Risk and rollout", updated whenever its target changes.
-- Merging a stack: bottom-up, with merge commits (`gh pr merge <n> --merge`, never `--delete-branch` unless I ask). After each merge, retarget the next PR to the base unless the host already did. If the repo allows only squash or rebase merges (Orient checks), merge nothing and leave the stack to me. B7 lists the chain in merge order.
+- Merging a stack: bottom-up, with merge commits pinned to the approved head (`gh pr merge <n> --merge --match-head-commit <approved sha>`, or the host's equivalent pin; never `--delete-branch` unless I ask). After each merge, retarget the next PR to the base unless the host already did. If the repo allows only squash or rebase merges (Orient checks), merge nothing and leave the stack to me. B7 lists the chain in merge order.
 
 ### B3. Unrelated issues found mid-task
 - Do not fold them into the current branch. One ticket, one PR.
@@ -166,7 +166,7 @@ Units: U1 <agent> <model> <status> <paths> id <worker-id> | U2 ...
 Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
 Adversarial: round <n>/<budget> | verdict <approve|request changes|pending> @ <short sha>
 Findings open: R3 [major] path:line, S2 [blocker] path:line, W1 path, R5 [minor] ... | closed: R1, R2, S1 | disputed: R4 <reason> | justified: R6 <reason>
-Baseline: <path> <blob sha, link target, or nested HEAD>, ... | worktrees <paths> | snapshot <git status lines> | user config <path> <blob sha>, ... [main checkout: ...], or none
+Baseline: <path> <blob sha, link target, or nested HEAD>, ... | worktrees <paths> | snapshot <git status lines> | user config <path> <blob sha>, ... | git config and hooks <path> <blob sha>, ... [main checkout: ...], or none
 Side tickets: <ID> <status> id <worker-id> worktree <path> [fix round <n>/<budget>, adversarial round <n>/<budget>], or none
 PRs: 1 <link> <branch> -> <base> <open|draft: why|merged> | 2 <link> <branch> -> <branch of 1> ..., or none
 Decisions: <what> -> <answer> (me | self: <reason>), or none
