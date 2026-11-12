@@ -55,7 +55,7 @@ Also follow the repo's engineering standards (B1 says where they live) and any o
 ### B3. Unrelated issues found mid-task
 - Do not fold them into the current branch. One ticket, one PR.
 - Create a ticket for the issue without asking (B2 rules), note which ticket you found it under, then spawn the `side-fix` subagent to handle it end to end in its own scaled-down loop (B4): its own `<TICKET-ID>/<slug>` branch from the correct base, fix, gates, PR. If it cannot spawn agents, it stops at ready for verify, and the orchestrator runs its verify loop and ships it (orchestrator Side loops). It runs in the background in a separate git worktree, so it never touches the main branch's working tree. Pass it the repo's B2 conventions in the brief.
-- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch once its PR is open, at the first point with no unit in flight and a clean tree. Units that need it, and the next verify round, wait for that merge. Record the ordering in both PRs under "Risk and rollout".
+- Keep the main task moving. If the issue is a hard prerequisite for the main change, it lands first: like every side PR it sits below the main PR (B2), and the main branch merges in its branch once its PR is open, at the first point with no unit in flight and a tree that matches the Orient snapshot (orchestrator Phase 1). Units that need it, and the next verify round, wait for that merge. Record the ordering in both PRs under "Risk and rollout".
 - Committed secrets: stop and flag immediately. That is a rotation, not a cleanup.
 - Pre-existing exploitable security issue, whoever reports it (reviewer, adversarial, verifier, side-fix, implementer): on a public repo (any visibility other than private, internal included), no public ticket, branch, or PR; park it for the report with a private-advisory recommendation. On a private repo, handle it as any other B3 issue, with ticket, branch, PR, and commit text naming it by ID, severity, and `path:line` only.
 - Report every side ticket and PR in the final summary (B7).
@@ -160,7 +160,7 @@ Units: U1 <agent> <model> <status> <paths> id <worker-id> | U2 ...
 Verify: fix round <n>/<budget> | reviewer <verdict> | gates <PASS|FAIL|INCOMPLETE> @ <short sha>
 Adversarial: round <n>/<budget> | verdict <approve|request changes|pending> @ <short sha>
 Findings open: R3 [major] path:line, S2 [blocker] path:line, W1 path, R5 [minor] ... | closed: R1, R2, S1 | disputed: R4 <reason> | justified: R6 <reason>
-Baseline: <path> <blob sha>, ... [main checkout: <path> <blob sha>, ...], or none
+Baseline: <path> <blob sha, link target, or nested HEAD>, ... | worktrees <paths> | snapshot <git status lines> | user config <path> <blob sha>, ... [main checkout: ...], or none
 Side tickets: <ID> <status> id <worker-id> worktree <path> [fix round <n>/<budget>, adversarial round <n>/<budget>], or none
 PRs: 1 <link> <branch> -> <base> <open|draft: why|merged> | 2 <link> <branch> -> <branch of 1> ..., or none
 Decisions: <what> -> <answer> (me | self: <reason>), or none
