@@ -35,16 +35,15 @@ permission:
     "git add --update*": deny
     "git commit -a*": deny
     "git commit --all*": deny
-    "git -* push*": deny
+    "git -* push *": deny
     "git -* reset --hard*": deny
-    "git -* rebase*": deny
-    "git -* merge": deny
+    "git -* rebase *": deny
     "git -* merge *": deny
     "git -* branch -D*": deny
     "git -* branch -d*": deny
     "git -* branch --delete*": deny
     "git -* commit --amend*": deny
-    "git -* config*": deny
+    "git -* config *": deny
     "git -* add -A*": deny
     "git -* add --all*": deny
     "git -* add .": deny
