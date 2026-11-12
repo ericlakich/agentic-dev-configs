@@ -112,7 +112,8 @@ ship        orchestrator      push, PR (stacked when there is more than one; eve
 report      orchestrator      B7: short sections, each under 250 words where possible, with a merge-order table for stacks
 
 side issue  side-fix          own ticket, branch, isolated copy, and PR; scaled-down loop with its own adversarial pass,
-                              3 rounds each, background
+                              3 rounds each, background; its PR counts only on the orchestrator's own adversarial approve,
+                              and side-fix opens it only after that
                               cannot spawn: stops at ready for verify; the orchestrator verifies and ships it
 ```
 
